@@ -1,0 +1,182 @@
+# openworktree (`owt`)
+
+An **ephemeral git worktree sandbox**. Create a throwaway worktree, run a command
+inside it, then clean up — a transparent prefix you put in front of any command:
+
+```sh
+owt -- npm test
+```
+
+`owt` creates a fresh worktree from your current `HEAD`, `cd`s into it, runs
+`npm test` there, passes the exit code straight back, and removes the worktree
+when the command finishes (even on Ctrl+C).
+
+## Why not just a worktree manager?
+
+Tools like [`gtr`](https://github.com/coderabbitai/git-worktree-runner) are
+*persistent worktree managers* (create / list / rename / remove as long-lived
+assets). `owt` is the opposite: a **run-and-discard sandbox** meant to be a
+primitive for scripts and agents. It deliberately is **not** a manager — no
+`mv`/`rename`/editing, only GC-level `list` / `clean`.
+
+## Install
+
+```sh
+cargo install --path .
+# or, for a dev build:
+cargo build --release   # binary at target/release/owt
+```
+
+Requires `git` on `PATH`.
+
+## Usage
+
+### One-shot (default)
+
+```sh
+owt -- <command> [args...]
+```
+
+The command runs with its working directory set to a fresh worktree. `owt` exits
+with the command's exit code.
+
+### Interactive
+
+```sh
+owt -i
+```
+
+Drops you into a shell inside a new worktree. The worktree is **not** auto-cleaned
+when you exit — use `owt clean` later. The shell is chosen by `--shell`, then the
+`shell` config key, then `$SHELL` / `%ComSpec%`.
+
+### Fan-out (parallel)
+
+Run the same command across several refs, each in its own worktree, in parallel:
+
+```sh
+owt --each main,feat-a,feat-b -- npm test
+```
+
+Each job sets `OWT_REF` (and `OWT_LABEL`). Useful for cross-branch comparison and
+regression checks.
+
+Or split work into N isolated parallel shards from one ref:
+
+```sh
+owt --shard 4 -- pytest --shard-id $OWT_INDEX
+```
+
+Each shard sets `OWT_INDEX` (`0..N`) and `OWT_TOTAL`. Worktree isolation lets the
+shards run side by side without colliding on files or ports. Worktree
+creation/cleanup is serialized (git mutates the repo); the commands run
+concurrently. The run exits non-zero if any job fails.
+
+Each job's output is captured and printed as one contiguous block under a
+`=== [label] exit N ===` header (no interleaving), followed by a per-job
+exit-code summary.
+
+### Options (creation)
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--from <ref>` | `HEAD` | Source ref the worktree is based on |
+| `--name <name>` | random `adjective-noun` | Worktree / branch name (errors if taken) |
+| `--dir <path>` | `<cache>/worktrees/<repo>__<name>` | Where to put the worktree |
+| `--include <glob>` | — | Extra path/glob to copy in (repeatable) |
+| `--setup <cmd>` | — | Command to run before the main command (e.g. `npm ci`) |
+| `--on-exit <discard\|keep>` | `discard` | What to do with the worktree at the end (one-shot) |
+| `--keep` | — | Shorthand for `--on-exit keep` |
+| `--shell <shell>` | config / `$SHELL` | Shell for interactive mode (`-i`) |
+| `--each <refs>` | — | Run once per comma-separated ref, in parallel |
+| `--shard <N>` | — | Run in N parallel worktrees from one ref |
+
+### On-exit policies (one-shot)
+
+| Policy | Worktree dir | Uncommitted changes | Mid-run commits | Branch |
+|--------|--------------|---------------------|-----------------|--------|
+| `discard` (default) | removed | discarded | removed | deleted |
+| `keep` | removed | **auto-committed** | kept | **kept** (empty branch kept too) |
+
+The `keep` auto-commit message is `owt: <command> @ <timestamp>`.
+
+## `.worktreeinclude`
+
+A fresh worktree is a clean checkout — it has no `node_modules`, no `.env`, etc.
+Put a `.worktreeinclude` file at your repo root to copy (or symlink) the
+gitignored-but-needed files into every new worktree. Syntax mirrors `.gitignore`:
+
+```gitignore
+# copy a file
+.env
+
+# symlink a directory (cheap; '@' prefix)
+@node_modules
+
+# globs are supported
+config/*.local
+
+# exclude a previously matched path ('!' prefix)
+!config/secret.local
+```
+
+- `@` → symlink instead of copy.
+- `!` → exclude.
+- On Windows, symlinks require Developer Mode or admin; `owt` falls back to a copy
+  (with a warning) when the privilege is missing.
+
+## Inspecting & cleaning up
+
+`owt` records each worktree it creates and can garbage-collect leftovers (e.g.
+from a crash or `kill -9`).
+
+```sh
+owt list            # worktrees owt created (running / orphan)
+owt list --all      # every non-main worktree, incl. external ones (read-only)
+owt list --json     # machine-readable
+```
+
+```sh
+owt clean                 # remove owt orphans (dead sessions) — safe default
+owt clean <name>          # remove one specific owt worktree
+owt clean --running       # also remove still-running owt worktrees
+owt clean --all           # remove ALL non-main worktrees, incl. external ones
+```
+
+`clean` flags: `--force` (override uncommitted changes / locks), `--yes` (skip the
+confirmation prompt), `--dry-run` (show what would happen).
+
+**Safety guardrails** (especially for `--all`):
+
+1. The **main worktree is never removed**.
+2. You get a preview + confirmation prompt (skip with `--yes`).
+3. Worktrees with **uncommitted changes are skipped** unless `--force`.
+4. **Locked** worktrees are skipped unless `--force`.
+5. `--dry-run` removes nothing.
+
+External worktrees keep their branches; only owt-owned worktrees have their
+`owt/<name>` branch deleted on removal.
+
+## Configuration
+
+| Env var | Effect |
+|---------|--------|
+| `OWT_CACHE_DIR` | Override where owt stores worktrees and its index (default: the platform cache dir) |
+| `OWT_CONFIG` | Path to the config file (default: `<config>/openworktree/config.toml`) |
+
+Config file (`config.toml`), all keys optional:
+
+```toml
+# Shell used by interactive mode (owt -i)
+shell = "/bin/zsh"
+```
+
+Per-worktree metadata is stored inside git's private admin dir
+(`.git/worktrees/<id>/owt-meta.json`), never in the working tree — so it can never
+be accidentally committed.
+
+## Status
+
+Implemented: one-shot & interactive runs (with shell selection), exit-code
+passthrough, Ctrl+C-safe cleanup, `.worktreeinclude`, `list`, `clean`, and
+fan-out (`--each` / `--shard`). See `DESIGN.md`.

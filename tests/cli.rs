@@ -52,7 +52,9 @@ fn git_out(repo: &Path, args: &[&str]) -> String {
 fn setup() -> Env {
     let repo = TempDir::new().unwrap();
     let cache = TempDir::new().unwrap();
-    git(repo.path(), &["init", "-q"]);
+    // Force the initial branch to "main" regardless of the host's git default
+    // (CI runners may default to "master").
+    git(repo.path(), &["-c", "init.defaultBranch=main", "init", "-q"]);
     git(repo.path(), &["config", "user.email", "t@t.co"]);
     git(repo.path(), &["config", "user.name", "t"]);
     std::fs::write(repo.path().join("file.txt"), "hello\n").unwrap();

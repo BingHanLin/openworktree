@@ -54,7 +54,10 @@ fn setup() -> Env {
     let cache = TempDir::new().unwrap();
     // Force the initial branch to "main" regardless of the host's git default
     // (CI runners may default to "master").
-    git(repo.path(), &["-c", "init.defaultBranch=main", "init", "-q"]);
+    git(
+        repo.path(),
+        &["-c", "init.defaultBranch=main", "init", "-q"],
+    );
     git(repo.path(), &["config", "user.email", "t@t.co"]);
     git(repo.path(), &["config", "user.name", "t"]);
     std::fs::write(repo.path().join("file.txt"), "hello\n").unwrap();

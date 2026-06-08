@@ -260,6 +260,24 @@ fn interactive_honors_shell_and_keeps_worktree() {
 }
 
 #[test]
+fn rejects_silently_ignored_flag_combos() {
+    let env = setup();
+
+    // --shell without -i.
+    let out = owt(&env, &["--shell", "bash", "--", "git", "status"]);
+    assert!(!out.status.success());
+
+    // --keep with -i (interactive never auto-cleans).
+    let out = owt(&env, &["-i", "--keep"]);
+    assert!(!out.status.success());
+    assert_eq!(linked_worktree_count(env.repo.path()), 0, "must not create a worktree");
+
+    // --name / --dir with fan-out.
+    let out = owt(&env, &["--each", "main", "--name", "x", "--", "git", "status"]);
+    assert!(!out.status.success());
+}
+
+#[test]
 fn each_runs_per_ref_and_cleans_up() {
     let env = setup();
     let repo = env.repo.path();

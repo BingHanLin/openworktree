@@ -55,6 +55,11 @@ fn run(args: RunArgs) -> Result<i32> {
     let on_exit = if args.keep { OnExit::Keep } else { args.on_exit };
     let fan_out = !args.each.is_empty() || args.shard.is_some();
 
+    // --shell is only meaningful for interactive mode.
+    if args.shell.is_some() && !args.interactive {
+        bail!("--shell only applies to interactive mode (-i)");
+    }
+
     if args.interactive {
         if fan_out {
             bail!("interactive mode (-i) cannot be combined with --each / --shard");
@@ -62,12 +67,24 @@ fn run(args: RunArgs) -> Result<i32> {
         if !args.command.is_empty() {
             bail!("interactive mode (-i) does not take a command");
         }
+        // Interactive worktrees are never auto-cleaned, so a keep policy is a no-op.
+        if args.keep || args.on_exit == OnExit::Keep {
+            bail!(
+                "--keep / --on-exit have no effect with -i (interactive never auto-cleans; \
+                 use `owt clean` afterwards)"
+            );
+        }
         return run_interactive(&args, on_exit);
     }
 
     if fan_out {
         if !args.each.is_empty() && args.shard.is_some() {
             bail!("--each and --shard are mutually exclusive");
+        }
+        // Each fan-out job creates its own auto-named worktree, so a single
+        // --name / --dir cannot apply to all of them.
+        if args.name.is_some() || args.dir.is_some() {
+            bail!("--name / --dir cannot be used with --each / --shard (each job gets its own worktree)");
         }
         if args.command.is_empty() {
             bail!("no command given for --each / --shard");

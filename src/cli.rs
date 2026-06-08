@@ -40,9 +40,9 @@ pub struct RunArgs {
     #[arg(long)]
     pub shard: Option<usize>,
 
-    /// Source ref the worktree is created from.
-    #[arg(long, default_value = "HEAD")]
-    pub from: String,
+    /// Source ref the worktree is created from (default: config `from`, else HEAD).
+    #[arg(long)]
+    pub from: Option<String>,
 
     /// Worktree / branch name. Random readable name if omitted.
     #[arg(long)]

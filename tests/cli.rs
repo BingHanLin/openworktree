@@ -295,6 +295,43 @@ fn alias_extra_args_override() {
 }
 
 #[test]
+fn config_default_from_is_used() {
+    let env = setup();
+    let repo = env.repo.path();
+    // Branch 'other' has a marker file that main lacks.
+    git(repo, &["checkout", "-q", "-b", "other"]);
+    std::fs::write(repo.join("marker.txt"), "OTHER").unwrap();
+    git(repo, &["add", "-A"]);
+    git(repo, &["commit", "-qm", "other marker"]);
+    git(repo, &["checkout", "-q", "main"]);
+
+    std::fs::write(env.cache.path().join("config.toml"), "from = \"other\"\n").unwrap();
+
+    let cmd = format!("{CAT} marker.txt");
+    let out = owt(&env, &["--", SH[0], SH[1], &cmd]);
+    assert!(out.status.success(), "stderr: {}", String::from_utf8_lossy(&out.stderr));
+    assert!(stdout(&out).contains("OTHER"), "worktree should be based on 'other'");
+}
+
+#[test]
+fn from_flag_overrides_config_default() {
+    let env = setup();
+    let repo = env.repo.path();
+    git(repo, &["checkout", "-q", "-b", "other"]);
+    std::fs::write(repo.join("marker.txt"), "OTHER").unwrap();
+    git(repo, &["add", "-A"]);
+    git(repo, &["commit", "-qm", "other marker"]);
+    git(repo, &["checkout", "-q", "main"]);
+
+    std::fs::write(env.cache.path().join("config.toml"), "from = \"other\"\n").unwrap();
+
+    // --from main overrides the config default, so marker.txt must be absent.
+    let cmd = format!("{CAT} marker.txt");
+    let out = owt(&env, &["--from", "main", "--", SH[0], SH[1], &cmd]);
+    assert!(!out.status.success(), "from=main worktree should not contain marker.txt");
+}
+
+#[test]
 fn unknown_alias_errors() {
     let env = setup();
     let out = owt(&env, &["@nope"]);

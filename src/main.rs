@@ -82,8 +82,16 @@ fn dispatch(cli: Cli) -> Result<i32> {
 }
 
 fn run(args: RunArgs) -> Result<i32> {
+    let config = Config::load()?;
     let on_exit = if args.keep { OnExit::Keep } else { args.on_exit };
     let fan_out = !args.each.is_empty() || args.shard.is_some();
+
+    // Source ref: --from flag > config `from` > HEAD.
+    let from = args
+        .from
+        .clone()
+        .or_else(|| config.from.clone())
+        .unwrap_or_else(|| "HEAD".to_string());
 
     // --shell is only meaningful for interactive mode.
     if args.shell.is_some() && !args.interactive {
@@ -104,7 +112,7 @@ fn run(args: RunArgs) -> Result<i32> {
                  use `owt clean` afterwards)"
             );
         }
-        return run_interactive(&args, on_exit);
+        return run_interactive(&args, &from, &config);
     }
 
     if fan_out {
@@ -119,18 +127,18 @@ fn run(args: RunArgs) -> Result<i32> {
         if args.command.is_empty() {
             bail!("no command given for --each / --shard");
         }
-        return run_fanout(&args, on_exit);
+        return run_fanout(&args, on_exit, &from);
     }
 
     if args.command.is_empty() {
         bail!("no command given; use `owt -- <command>` or `owt -i`");
     }
-    run_oneshot(&args, on_exit)
+    run_oneshot(&args, on_exit, &from)
 }
 
-fn run_oneshot(args: &RunArgs, on_exit: OnExit) -> Result<i32> {
+fn run_oneshot(args: &RunArgs, on_exit: OnExit, from: &str) -> Result<i32> {
     let mut session = Session::create(CreateOpts {
-        from: &args.from,
+        from,
         name: args.name.as_deref(),
         dir: args.dir.as_deref(),
         include: &args.include,
@@ -149,14 +157,14 @@ fn run_oneshot(args: &RunArgs, on_exit: OnExit) -> Result<i32> {
     Ok(code)
 }
 
-fn run_interactive(args: &RunArgs, on_exit: OnExit) -> Result<i32> {
+fn run_interactive(args: &RunArgs, from: &str, config: &Config) -> Result<i32> {
     let session = Session::create(CreateOpts {
-        from: &args.from,
+        from,
         name: args.name.as_deref(),
         dir: args.dir.as_deref(),
         include: &args.include,
         setup: args.setup.as_deref(),
-        on_exit,
+        on_exit: OnExit::Discard,
         interactive: true,
         command: Vec::new(),
         progress: true,
@@ -168,7 +176,7 @@ fn run_interactive(args: &RunArgs, on_exit: OnExit) -> Result<i32> {
         session.branch
     );
 
-    let shell = Config::load()?.resolve_shell(args.shell.as_deref());
+    let shell = config.resolve_shell(args.shell.as_deref());
     let status = Command::new(&shell)
         .current_dir(&session.worktree_path)
         .status()
@@ -180,7 +188,7 @@ fn run_interactive(args: &RunArgs, on_exit: OnExit) -> Result<i32> {
 /// Run each ref (`--each`) or shard (`--shard`) in its own worktree in parallel.
 /// Worktree creation/cleanup is serialized (git mutates the repo); the commands
 /// themselves run concurrently. Returns 0 only if every job succeeded.
-fn run_fanout(args: &RunArgs, on_exit: OnExit) -> Result<i32> {
+fn run_fanout(args: &RunArgs, on_exit: OnExit, from: &str) -> Result<i32> {
     signal::install();
 
     // (label, from_ref, extra_env) per job.
@@ -192,7 +200,7 @@ fn run_fanout(args: &RunArgs, on_exit: OnExit) -> Result<i32> {
             .map(|i| {
                 (
                     format!("shard-{i}"),
-                    args.from.clone(),
+                    from.to_string(),
                     vec![
                         ("OWT_INDEX".to_string(), i.to_string()),
                         ("OWT_TOTAL".to_string(), n.to_string()),

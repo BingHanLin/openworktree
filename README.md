@@ -82,7 +82,7 @@ exit-code summary.
 
 | Flag | Default | Description |
 |------|---------|-------------|
-| `--from <ref>` | `HEAD` | Source ref the worktree is based on |
+| `--from <ref>` | config `from`, else `HEAD` | Source ref the worktree is based on |
 | `--name <name>` | random `adjective-noun` | Worktree / branch name (errors if taken) |
 | `--dir <path>` | `<cache>/worktrees/<repo>__<name>` | Where to put the worktree |
 | `--include <glob>` | — | Extra path/glob to copy in (repeatable) |
@@ -171,6 +171,9 @@ Config file (`config.toml`), all keys optional:
 ```toml
 # Shell used by interactive mode (owt -i)
 shell = "/bin/zsh"
+
+# Default source ref when --from is not given (otherwise HEAD)
+from = "origin/main"
 
 # Aliases: saved argument presets, invoked as `owt @<name>`
 [alias.oc]

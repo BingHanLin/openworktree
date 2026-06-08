@@ -14,6 +14,9 @@ pub struct Config {
     /// Shell used by interactive mode (`owt -i`).
     pub shell: Option<String>,
 
+    /// Default source ref when `--from` is not given (otherwise HEAD).
+    pub from: Option<String>,
+
     /// Named argument presets, invoked as `owt @<name>`.
     #[serde(default)]
     pub alias: HashMap<String, Alias>,
@@ -71,6 +74,7 @@ mod tests {
     fn shell_precedence_cli_over_config() {
         let cfg = Config {
             shell: Some("from_config".to_string()),
+            from: None,
             alias: Default::default(),
         };
         assert_eq!(cfg.resolve_shell(Some("from_cli")), "from_cli");

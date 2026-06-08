@@ -31,6 +31,8 @@ pub struct CreateOpts<'a> {
     pub on_exit: OnExit,
     pub interactive: bool,
     pub command: Vec<String>,
+    /// Print step-by-step progress to stderr (off for fan-out to avoid interleaving).
+    pub progress: bool,
 }
 
 impl Session {
@@ -58,6 +60,10 @@ impl Session {
                 .with_context(|| format!("creating {}", parent.display()))?;
         }
 
+        let short = base_commit.get(..8).unwrap_or(&base_commit);
+        if opts.progress {
+            eprintln!("owt: creating worktree '{name}' from {} ({short})", opts.from);
+        }
         git::worktree_add(&worktree_path, &branch, opts.from)?;
 
         let mut session = Session {
@@ -75,7 +81,9 @@ impl Session {
         //
         // Copy / symlink gitignored-but-needed files from the source tree.
         match crate::include::apply(&toplevel, &worktree_path, opts.include) {
-            Ok(n) if n > 0 => eprintln!("owt: included {n} path(s) into worktree"),
+            Ok(n) if n > 0 && opts.progress => {
+                eprintln!("owt: included {n} path(s) into worktree")
+            }
             Ok(_) => {}
             Err(e) => {
                 session.cleanup_on_error();
@@ -84,6 +92,9 @@ impl Session {
         }
 
         if let Some(cmd) = opts.setup {
+            if opts.progress {
+                eprintln!("owt: running setup: {cmd}");
+            }
             if let Err(e) = run_in(&worktree_path, cmd) {
                 session.cleanup_on_error();
                 return Err(e).context("setup command failed");
@@ -122,6 +133,9 @@ impl Session {
             return Err(e).context("writing worktree metadata");
         }
 
+        if opts.progress {
+            eprintln!("owt: ready at {}", worktree_path.display());
+        }
         Ok(session)
     }
 

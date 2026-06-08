@@ -38,7 +38,9 @@ owt -- <command> [args...]
 ```
 
 The command runs with its working directory set to a fresh worktree. `owt` exits
-with the command's exit code.
+with the command's exit code. Preparation progress (creating the worktree,
+copying includes, running `--setup`, ready) is printed to **stderr**, so it never
+mixes into the command's stdout. (Fan-out runs stay quiet to avoid interleaving.)
 
 ### Interactive
 

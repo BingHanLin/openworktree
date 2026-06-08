@@ -91,6 +91,7 @@ fn run_oneshot(args: &RunArgs, on_exit: OnExit) -> Result<i32> {
         on_exit,
         interactive: false,
         command: args.command.clone(),
+        progress: true,
     })?;
 
     let code = exec(&session.worktree_path, &args.command, &[])?;
@@ -111,6 +112,7 @@ fn run_interactive(args: &RunArgs, on_exit: OnExit) -> Result<i32> {
         on_exit,
         interactive: true,
         command: Vec::new(),
+        progress: true,
     })?;
 
     eprintln!(
@@ -229,6 +231,7 @@ fn run_job(
             on_exit,
             interactive: false,
             command: command.to_vec(),
+            progress: false,
         })
     };
 

@@ -25,8 +25,7 @@ use cli::{Cli, OnExit, RunArgs, Sub};
 use session::{CreateOpts, Session};
 
 fn main() {
-    let cli = Cli::parse();
-    let code = match dispatch(cli) {
+    let code = match run_cli() {
         Ok(code) => code,
         Err(e) => {
             eprintln!("owt: error: {e:#}");
@@ -34,6 +33,37 @@ fn main() {
         }
     };
     std::process::exit(code);
+}
+
+fn run_cli() -> Result<i32> {
+    let argv = expand_alias(std::env::args().collect())?;
+    let cli = Cli::parse_from(argv);
+    dispatch(cli)
+}
+
+/// If the first argument is `@name`, replace it with the alias's args from
+/// config (later args are kept, so they can extend or override the alias).
+fn expand_alias(argv: Vec<String>) -> Result<Vec<String>> {
+    let Some(first) = argv.get(1) else {
+        return Ok(argv);
+    };
+    let Some(name) = first.strip_prefix('@') else {
+        return Ok(argv);
+    };
+    if name.is_empty() {
+        bail!("missing alias name after '@'");
+    }
+
+    let config = Config::load()?;
+    let alias = config.alias.get(name).with_context(|| {
+        format!("unknown alias '@{name}' (define [alias.{name}] in config.toml)")
+    })?;
+
+    let mut out = Vec::with_capacity(argv.len() + alias.args.len());
+    out.push(argv[0].clone());
+    out.extend(alias.args.iter().cloned());
+    out.extend(argv[2..].iter().cloned());
+    Ok(out)
 }
 
 fn dispatch(cli: Cli) -> Result<i32> {

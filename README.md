@@ -171,7 +171,29 @@ Config file (`config.toml`), all keys optional:
 ```toml
 # Shell used by interactive mode (owt -i)
 shell = "/bin/zsh"
+
+# Aliases: saved argument presets, invoked as `owt @<name>`
+[alias.oc]
+args = ["--from", "origin/main", "-i", "--shell", "opencode"]
+
+[alias.t]
+args = ["--keep", "--setup", "npm ci", "--", "npm", "test"]
 ```
+
+## Aliases
+
+Save a frequently-used invocation under `[alias.<name>]` and run it with the `@`
+prefix:
+
+```sh
+owt @oc                 # expands to: owt --from origin/main -i --shell opencode
+owt @t                  # expands to: owt --keep --setup "npm ci" -- npm test
+```
+
+Extra arguments after `@name` are appended to the alias. A later flag overrides
+an earlier one, so `owt @oc --from HEAD` overrides the alias's `--from`. Note that
+if the alias ends with `-- <command>`, anything you append goes to that command,
+not to owt.
 
 Per-worktree metadata is stored inside git's private admin dir
 (`.git/worktrees/<id>/owt-meta.json`), never in the working tree — so it can never

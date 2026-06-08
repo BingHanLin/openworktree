@@ -7,6 +7,9 @@ use clap::{Args, Parser, Subcommand, ValueEnum};
 #[derive(Parser, Debug)]
 #[command(name = "owt", version, about, long_about = None)]
 #[command(args_conflicts_with_subcommands = true)]
+// Let a later flag override an earlier one so `owt @alias --from X` can override
+// a --from baked into the alias instead of erroring on the duplicate.
+#[command(args_override_self = true)]
 pub struct Cli {
     /// Run options (used when no subcommand is given).
     #[command(flatten)]

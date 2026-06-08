@@ -66,6 +66,7 @@ fn owt(env: &Env, args: &[&str]) -> Output {
         .args(args)
         .current_dir(env.repo.path())
         .env("OWT_CACHE_DIR", env.cache.path())
+        .env("OWT_CONFIG", env.cache.path().join("config.toml"))
         .output()
         .expect("spawn owt")
 }
@@ -257,6 +258,47 @@ fn interactive_honors_shell_and_keeps_worktree() {
     let _ = out.status;
     // Interactive mode must NOT auto-clean its worktree.
     assert_eq!(linked_worktree_count(env.repo.path()), 1);
+}
+
+#[test]
+fn alias_expands_from_config() {
+    let env = setup();
+    let cfg = env.cache.path().join("config.toml");
+    std::fs::write(
+        &cfg,
+        format!(
+            "[alias.hi]\nargs = [\"--\", \"{}\", \"{}\", \"echo ALIASED\"]\n",
+            SH[0], SH[1]
+        ),
+    )
+    .unwrap();
+
+    let out = owt(&env, &["@hi"]);
+    assert!(out.status.success(), "stderr: {}", String::from_utf8_lossy(&out.stderr));
+    assert!(stdout(&out).contains("ALIASED"));
+}
+
+#[test]
+fn alias_extra_args_override() {
+    let env = setup();
+    let cfg = env.cache.path().join("config.toml");
+    // Alias supplies flags only (no trailing command); user appends more flags
+    // and the command. A later --name overrides the alias's (clap: last wins).
+    std::fs::write(&cfg, "[alias.k]\nargs = [\"--keep\", \"--name\", \"aliasname\"]\n").unwrap();
+
+    let out = owt(&env, &["@k", "--name", "overridden", "--", SH[0], SH[1], "echo hi"]);
+    assert!(out.status.success(), "stderr: {}", String::from_utf8_lossy(&out.stderr));
+    let branches = git_out(env.repo.path(), &["branch", "--list", "owt/*"]);
+    assert!(branches.contains("owt/overridden"), "branches: {branches}");
+    assert!(!branches.contains("owt/aliasname"));
+    git(env.repo.path(), &["branch", "-D", "owt/overridden"]);
+}
+
+#[test]
+fn unknown_alias_errors() {
+    let env = setup();
+    let out = owt(&env, &["@nope"]);
+    assert!(!out.status.success());
 }
 
 #[test]

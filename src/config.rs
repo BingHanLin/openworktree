@@ -6,12 +6,23 @@
 use anyhow::{Context, Result};
 use directories::ProjectDirs;
 use serde::Deserialize;
+use std::collections::HashMap;
 use std::path::PathBuf;
 
 #[derive(Debug, Default, Deserialize)]
 pub struct Config {
     /// Shell used by interactive mode (`owt -i`).
     pub shell: Option<String>,
+
+    /// Named argument presets, invoked as `owt @<name>`.
+    #[serde(default)]
+    pub alias: HashMap<String, Alias>,
+}
+
+/// A saved set of arguments, e.g. `[alias.oc] args = ["--from", "origin/main", ...]`.
+#[derive(Debug, Deserialize)]
+pub struct Alias {
+    pub args: Vec<String>,
 }
 
 fn config_path() -> Option<PathBuf> {
@@ -60,6 +71,7 @@ mod tests {
     fn shell_precedence_cli_over_config() {
         let cfg = Config {
             shell: Some("from_config".to_string()),
+            alias: Default::default(),
         };
         assert_eq!(cfg.resolve_shell(Some("from_cli")), "from_cli");
         assert_eq!(cfg.resolve_shell(None), "from_config");

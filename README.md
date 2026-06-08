@@ -13,11 +13,47 @@ when the command finishes (even on Ctrl+C).
 
 ## Why not just a worktree manager?
 
-Tools like [`gtr`](https://github.com/coderabbitai/git-worktree-runner) are
-*persistent worktree managers* (create / list / rename / remove as long-lived
-assets). `owt` is the opposite: a **run-and-discard sandbox** meant to be a
-primitive for scripts and agents. It deliberately is **not** a manager — no
-`mv`/`rename`/editing, only GC-level `list` / `clean`.
+Most worktree tools are *persistent managers* (create / list / rename / remove
+worktrees as long-lived assets). `owt` is the opposite: a **run-and-discard
+sandbox** meant to be a primitive for scripts and agents. It deliberately is
+**not** a manager — no `mv`/`rename`/editing, only GC-level `list` / `clean`.
+
+## Compared to plain `git worktree`
+
+Running a command in a throwaway worktree by hand is several steps you must not
+forget to undo:
+
+```sh
+git worktree add -b tmp ../tmp HEAD   # create
+cd ../tmp                             # enter
+npm test                              # run
+cd -                                  # leave
+git worktree remove --force ../tmp    # clean up the dir
+git branch -D tmp                     # clean up the branch
+```
+
+With `owt` it is one line, and cleanup (including on Ctrl+C or failure) is
+automatic:
+
+```sh
+owt -- npm test
+```
+
+On top of that one-liner, `owt` adds things raw `git worktree` has no notion of:
+
+| | plain `git worktree` | `owt` |
+|---|---|---|
+| Run a command in the worktree | manual `cd` + run | `owt -- <cmd>` (cwd set for you) |
+| Cleanup after | manual, easy to forget | automatic (`discard`) or `--keep` |
+| Cleanup on Ctrl+C / crash | left behind | removed (signal-safe) + `owt clean` GC |
+| Exit code of your command | lost in the steps | passed straight through |
+| Unique naming / location | you pick every time | auto (random name, cache dir) |
+| Copy `.env` / `node_modules` in | manual | `.worktreeinclude` / `--include` |
+| Run across many branches | scripting | `owt --each a,b,c -- <cmd>` |
+| Isolated parallel shards | scripting | `owt --shard N -- <cmd>` |
+
+`owt` is a thin convenience layer over `git worktree` (it shells out to it), so
+your git config, hooks, and credentials all still apply.
 
 ## Install
 
@@ -210,4 +246,4 @@ be accidentally committed.
 
 Implemented: one-shot & interactive runs (with shell selection), exit-code
 passthrough, Ctrl+C-safe cleanup, `.worktreeinclude`, `list`, `clean`, and
-fan-out (`--each` / `--shard`). See `DESIGN.md`.
+fan-out (`--each` / `--shard`).

@@ -11,7 +11,19 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  # Create the release (and its notes) once, before any asset uploads, so the
+  # release body isn't generated once per build job.
+  create-release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+
   build:
+    needs: create-release
     strategy:
       fail-fast: false
       matrix:
@@ -54,8 +66,7 @@ jobs:
           Compress-Archive -Path $dir -DestinationPath "$dir.zip"
           "ASSET=$dir.zip" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
 
-      - name: Publish to release
+      - name: Upload asset to release
         uses: softprops/action-gh-release@v2
         with:
           files: ${{ env.ASSET }}
-          generate_release_notes: true

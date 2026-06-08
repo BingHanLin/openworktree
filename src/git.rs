@@ -23,8 +23,7 @@ fn git(args: &[&str]) -> Result<String> {
 /// Path to the shared `.git` directory (works from the main repo or any worktree).
 /// Errors when not inside any git tree.
 pub fn common_dir() -> Result<PathBuf> {
-    let out = git(&["rev-parse", "--git-common-dir"])
-        .context("not inside a git repository")?;
+    let out = git(&["rev-parse", "--git-common-dir"]).context("not inside a git repository")?;
     let path = PathBuf::from(out);
     // `--git-common-dir` may be relative to the current directory; make it absolute.
     let abs = std::fs::canonicalize(&path).unwrap_or(path);
@@ -33,8 +32,7 @@ pub fn common_dir() -> Result<PathBuf> {
 
 /// Top level of the current working tree (the source we copy includes from).
 pub fn toplevel() -> Result<PathBuf> {
-    let out = git(&["rev-parse", "--show-toplevel"])
-        .context("not inside a git working tree")?;
+    let out = git(&["rev-parse", "--show-toplevel"]).context("not inside a git working tree")?;
     let path = PathBuf::from(out);
     Ok(std::fs::canonicalize(&path).unwrap_or(path))
 }
@@ -50,13 +48,18 @@ pub fn repo_name(common_dir: &Path) -> String {
 
 /// Resolve a ref to a full commit SHA.
 pub fn resolve_commit(reference: &str) -> Result<String> {
-    git(&["rev-parse", reference])
-        .with_context(|| format!("cannot resolve ref '{}'", reference))
+    git(&["rev-parse", reference]).with_context(|| format!("cannot resolve ref '{}'", reference))
 }
 
 /// Whether a branch already exists.
 pub fn branch_exists(branch: &str) -> bool {
-    git(&["rev-parse", "--verify", "--quiet", &format!("refs/heads/{branch}")]).is_ok()
+    git(&[
+        "rev-parse",
+        "--verify",
+        "--quiet",
+        &format!("refs/heads/{branch}"),
+    ])
+    .is_ok()
 }
 
 /// Create a worktree at `path` on a new `branch` based on `from_ref`.

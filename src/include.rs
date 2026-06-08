@@ -117,10 +117,11 @@ fn resolve(src: &Path, pattern: &str) -> Result<Vec<PathBuf>> {
         let joined = src.join(pattern);
         let pat = joined.to_string_lossy();
         let mut out = Vec::new();
-        for entry in glob::glob(&pat).with_context(|| format!("bad glob '{pattern}'"))? {
-            if let Ok(p) = entry {
-                out.push(p);
-            }
+        for p in glob::glob(&pat)
+            .with_context(|| format!("bad glob '{pattern}'"))?
+            .flatten()
+        {
+            out.push(p);
         }
         Ok(out)
     } else {
@@ -149,8 +150,7 @@ fn copy_dir(src: &Path, dest: &Path) -> Result<()> {
         if from.is_dir() {
             copy_dir(&from, &to)?;
         } else {
-            std::fs::copy(&from, &to)
-                .with_context(|| format!("copying {}", from.display()))?;
+            std::fs::copy(&from, &to).with_context(|| format!("copying {}", from.display()))?;
         }
     }
     Ok(())

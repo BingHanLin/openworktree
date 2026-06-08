@@ -62,7 +62,10 @@ impl Session {
 
         let short = base_commit.get(..8).unwrap_or(&base_commit);
         if opts.progress {
-            eprintln!("owt: creating worktree '{name}' from {} ({short})", opts.from);
+            eprintln!(
+                "owt: creating worktree '{name}' from {} ({short})",
+                opts.from
+            );
         }
         git::worktree_add(&worktree_path, &branch, opts.from)?;
 
@@ -109,7 +112,12 @@ impl Session {
             base_commit,
             worktree_path: worktree_path.to_string_lossy().to_string(),
             repo_common_dir: common_dir.to_string_lossy().to_string(),
-            mode: if opts.interactive { "interactive" } else { "oneshot" }.to_string(),
+            mode: if opts.interactive {
+                "interactive"
+            } else {
+                "oneshot"
+            }
+            .to_string(),
             command: opts.command,
             on_exit: match opts.on_exit {
                 OnExit::Discard => "discard",

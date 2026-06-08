@@ -124,12 +124,7 @@ pub struct Plan {
 }
 
 /// Decide which worktrees to remove given the clean flags and guardrails.
-pub fn plan_clean(
-    name: Option<&str>,
-    running: bool,
-    all: bool,
-    force: bool,
-) -> Result<Vec<Plan>> {
+pub fn plan_clean(name: Option<&str>, running: bool, all: bool, force: bool) -> Result<Vec<Plan>> {
     let views = collect()?;
     let mut plans = Vec::new();
 

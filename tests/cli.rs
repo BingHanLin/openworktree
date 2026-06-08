@@ -128,14 +128,25 @@ fn keep_retains_branch_without_leaking_metadata() {
     let env = setup();
     let out = owt(
         &env,
-        &["--name", "kept", "--keep", "--", SH[0], SH[1], "echo x> newfile.txt"],
+        &[
+            "--name",
+            "kept",
+            "--keep",
+            "--",
+            SH[0],
+            SH[1],
+            "echo x> newfile.txt",
+        ],
     );
     assert!(out.status.success());
 
     // Branch retained.
     assert!(git_out(env.repo.path(), &["branch", "--list", "owt/kept"]).contains("owt/kept"));
     // The user's real file made it onto the branch...
-    let tree = git_out(env.repo.path(), &["ls-tree", "-r", "--name-only", "owt/kept"]);
+    let tree = git_out(
+        env.repo.path(),
+        &["ls-tree", "-r", "--name-only", "owt/kept"],
+    );
     assert!(tree.contains("newfile.txt"));
     // ...but our metadata never did.
     assert!(!tree.contains("owt-meta.json"));
@@ -160,7 +171,11 @@ fn worktreeinclude_copies_and_negates_and_extra_include() {
     // keep.local should be present, drop.local excluded, secret.txt via --include.
     let cmd = format!("{CAT} keep.local && {CAT} secret.txt");
     let out = owt(&env, &["--include", "secret.txt", "--", SH[0], SH[1], &cmd]);
-    assert!(out.status.success(), "stderr: {}", String::from_utf8_lossy(&out.stderr));
+    assert!(
+        out.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
     let s = stdout(&out);
     assert!(s.contains("KEEP"));
     assert!(s.contains("SECRET"));
@@ -168,7 +183,10 @@ fn worktreeinclude_copies_and_negates_and_extra_include() {
     // drop.local must not have been copied: cat'ing it should fail.
     let cmd = format!("{CAT} drop.local");
     let out = owt(&env, &["--", SH[0], SH[1], &cmd]);
-    assert!(!out.status.success(), "drop.local should not exist in worktree");
+    assert!(
+        !out.status.success(),
+        "drop.local should not exist in worktree"
+    );
 }
 
 #[test]
@@ -185,8 +203,30 @@ fn list_distinguishes_owt_from_external() {
     let repo = env.repo.path();
     let owt_wt = env.cache.path().join("owt_orphan");
     let ext_wt = env.cache.path().join("ext");
-    git(repo, &["worktree", "add", "-q", "-b", "owt/orphan", owt_wt.to_str().unwrap(), "HEAD"]);
-    git(repo, &["worktree", "add", "-q", "-b", "feat/ext", ext_wt.to_str().unwrap(), "HEAD"]);
+    git(
+        repo,
+        &[
+            "worktree",
+            "add",
+            "-q",
+            "-b",
+            "owt/orphan",
+            owt_wt.to_str().unwrap(),
+            "HEAD",
+        ],
+    );
+    git(
+        repo,
+        &[
+            "worktree",
+            "add",
+            "-q",
+            "-b",
+            "feat/ext",
+            ext_wt.to_str().unwrap(),
+            "HEAD",
+        ],
+    );
 
     // Default list: only owt-owned.
     let s = stdout(&owt(&env, &["list"]));
@@ -205,14 +245,38 @@ fn clean_default_removes_owt_orphans_only() {
     let repo = env.repo.path();
     let owt_wt = env.cache.path().join("owt_orphan");
     let ext_wt = env.cache.path().join("ext");
-    git(repo, &["worktree", "add", "-q", "-b", "owt/orphan", owt_wt.to_str().unwrap(), "HEAD"]);
-    git(repo, &["worktree", "add", "-q", "-b", "feat/ext", ext_wt.to_str().unwrap(), "HEAD"]);
+    git(
+        repo,
+        &[
+            "worktree",
+            "add",
+            "-q",
+            "-b",
+            "owt/orphan",
+            owt_wt.to_str().unwrap(),
+            "HEAD",
+        ],
+    );
+    git(
+        repo,
+        &[
+            "worktree",
+            "add",
+            "-q",
+            "-b",
+            "feat/ext",
+            ext_wt.to_str().unwrap(),
+            "HEAD",
+        ],
+    );
 
     let out = owt(&env, &["clean", "--yes"]);
     assert!(out.status.success());
 
     // owt orphan removed (branch gone), external untouched.
-    assert!(git_out(repo, &["branch", "--list", "owt/orphan"]).trim().is_empty());
+    assert!(git_out(repo, &["branch", "--list", "owt/orphan"])
+        .trim()
+        .is_empty());
     assert!(git_out(repo, &["branch", "--list", "feat/ext"]).contains("feat/ext"));
     assert_eq!(linked_worktree_count(repo), 1); // only the external remains
 }
@@ -222,13 +286,28 @@ fn clean_all_skips_dirty_without_force_then_removes_with_force() {
     let env = setup();
     let repo = env.repo.path();
     let ext_wt = env.cache.path().join("ext");
-    git(repo, &["worktree", "add", "-q", "-b", "feat/ext", ext_wt.to_str().unwrap(), "HEAD"]);
+    git(
+        repo,
+        &[
+            "worktree",
+            "add",
+            "-q",
+            "-b",
+            "feat/ext",
+            ext_wt.to_str().unwrap(),
+            "HEAD",
+        ],
+    );
     std::fs::write(ext_wt.join("file.txt"), "hello\nDIRTY\n").unwrap();
 
     // Without --force the dirty external is skipped.
     let out = owt(&env, &["clean", "--all", "--yes"]);
     assert!(out.status.success());
-    assert_eq!(linked_worktree_count(repo), 1, "dirty external must be kept");
+    assert_eq!(
+        linked_worktree_count(repo),
+        1,
+        "dirty external must be kept"
+    );
 
     // With --force it is removed, but its branch is retained (external).
     let out = owt(&env, &["clean", "--all", "--force", "--yes"]);
@@ -274,7 +353,11 @@ fn alias_expands_from_config() {
     .unwrap();
 
     let out = owt(&env, &["@hi"]);
-    assert!(out.status.success(), "stderr: {}", String::from_utf8_lossy(&out.stderr));
+    assert!(
+        out.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
     assert!(stdout(&out).contains("ALIASED"));
 }
 
@@ -284,10 +367,21 @@ fn alias_extra_args_override() {
     let cfg = env.cache.path().join("config.toml");
     // Alias supplies flags only (no trailing command); user appends more flags
     // and the command. A later --name overrides the alias's (clap: last wins).
-    std::fs::write(&cfg, "[alias.k]\nargs = [\"--keep\", \"--name\", \"aliasname\"]\n").unwrap();
+    std::fs::write(
+        &cfg,
+        "[alias.k]\nargs = [\"--keep\", \"--name\", \"aliasname\"]\n",
+    )
+    .unwrap();
 
-    let out = owt(&env, &["@k", "--name", "overridden", "--", SH[0], SH[1], "echo hi"]);
-    assert!(out.status.success(), "stderr: {}", String::from_utf8_lossy(&out.stderr));
+    let out = owt(
+        &env,
+        &["@k", "--name", "overridden", "--", SH[0], SH[1], "echo hi"],
+    );
+    assert!(
+        out.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
     let branches = git_out(env.repo.path(), &["branch", "--list", "owt/*"]);
     assert!(branches.contains("owt/overridden"), "branches: {branches}");
     assert!(!branches.contains("owt/aliasname"));
@@ -309,8 +403,15 @@ fn config_default_from_is_used() {
 
     let cmd = format!("{CAT} marker.txt");
     let out = owt(&env, &["--", SH[0], SH[1], &cmd]);
-    assert!(out.status.success(), "stderr: {}", String::from_utf8_lossy(&out.stderr));
-    assert!(stdout(&out).contains("OTHER"), "worktree should be based on 'other'");
+    assert!(
+        out.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(
+        stdout(&out).contains("OTHER"),
+        "worktree should be based on 'other'"
+    );
 }
 
 #[test]
@@ -328,7 +429,10 @@ fn from_flag_overrides_config_default() {
     // --from main overrides the config default, so marker.txt must be absent.
     let cmd = format!("{CAT} marker.txt");
     let out = owt(&env, &["--from", "main", "--", SH[0], SH[1], &cmd]);
-    assert!(!out.status.success(), "from=main worktree should not contain marker.txt");
+    assert!(
+        !out.status.success(),
+        "from=main worktree should not contain marker.txt"
+    );
 }
 
 #[test]
@@ -349,10 +453,17 @@ fn rejects_silently_ignored_flag_combos() {
     // --keep with -i (interactive never auto-cleans).
     let out = owt(&env, &["-i", "--keep"]);
     assert!(!out.status.success());
-    assert_eq!(linked_worktree_count(env.repo.path()), 0, "must not create a worktree");
+    assert_eq!(
+        linked_worktree_count(env.repo.path()),
+        0,
+        "must not create a worktree"
+    );
 
     // --name / --dir with fan-out.
-    let out = owt(&env, &["--each", "main", "--name", "x", "--", "git", "status"]);
+    let out = owt(
+        &env,
+        &["--each", "main", "--name", "x", "--", "git", "status"],
+    );
     assert!(!out.status.success());
 }
 
@@ -398,10 +509,25 @@ fn dry_run_removes_nothing() {
     let env = setup();
     let repo = env.repo.path();
     let owt_wt = env.cache.path().join("owt_orphan");
-    git(repo, &["worktree", "add", "-q", "-b", "owt/orphan", owt_wt.to_str().unwrap(), "HEAD"]);
+    git(
+        repo,
+        &[
+            "worktree",
+            "add",
+            "-q",
+            "-b",
+            "owt/orphan",
+            owt_wt.to_str().unwrap(),
+            "HEAD",
+        ],
+    );
 
     let out = owt(&env, &["clean", "--dry-run"]);
     assert!(out.status.success());
     assert!(stdout(&out).contains("dry run"));
-    assert_eq!(linked_worktree_count(repo), 1, "dry-run must not remove anything");
+    assert_eq!(
+        linked_worktree_count(repo),
+        1,
+        "dry-run must not remove anything"
+    );
 }

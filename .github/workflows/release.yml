@@ -1,0 +1,61 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            archive: tar.gz
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            archive: zip
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            archive: tar.gz
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - run: rustup target add ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo build --release --target ${{ matrix.target }}
+
+      - name: Package (tar.gz)
+        if: matrix.archive == 'tar.gz'
+        shell: bash
+        run: |
+          dir="owt-${GITHUB_REF_NAME}-${{ matrix.target }}"
+          mkdir "$dir"
+          cp "target/${{ matrix.target }}/release/owt" "$dir"/
+          cp README.md "$dir"/
+          tar czf "$dir.tar.gz" "$dir"
+          echo "ASSET=$dir.tar.gz" >> "$GITHUB_ENV"
+
+      - name: Package (zip)
+        if: matrix.archive == 'zip'
+        shell: pwsh
+        run: |
+          $dir = "owt-$env:GITHUB_REF_NAME-${{ matrix.target }}"
+          New-Item -ItemType Directory $dir | Out-Null
+          Copy-Item "target/${{ matrix.target }}/release/owt.exe" "$dir/"
+          Copy-Item README.md "$dir/"
+          Compress-Archive -Path $dir -DestinationPath "$dir.zip"
+          "ASSET=$dir.zip" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+      - name: Publish to release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ env.ASSET }}
+          generate_release_notes: true

@@ -21,6 +21,10 @@ primitive for scripts and agents. It deliberately is **not** a manager — no
 
 ## Install
 
+Prebuilt binaries for Linux, macOS, and Windows are attached to each
+[GitHub Release](https://github.com/BingHanLin/openworktree/releases) — download,
+extract, and put `owt` on your `PATH`. Or build from source:
+
 ```sh
 cargo install --path .
 # or, for a dev build:

@@ -40,8 +40,8 @@ fn cache_root() -> Result<PathBuf> {
             return Ok(PathBuf::from(dir));
         }
     }
-    let proj = ProjectDirs::from("", "", "openworktree")
-        .context("cannot determine app directories")?;
+    let proj =
+        ProjectDirs::from("", "", "openworktree").context("cannot determine app directories")?;
     Ok(proj.cache_dir().to_path_buf())
 }
 

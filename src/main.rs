@@ -83,7 +83,11 @@ fn dispatch(cli: Cli) -> Result<i32> {
 
 fn run(args: RunArgs) -> Result<i32> {
     let config = Config::load()?;
-    let on_exit = if args.keep { OnExit::Keep } else { args.on_exit };
+    let on_exit = if args.keep {
+        OnExit::Keep
+    } else {
+        args.on_exit
+    };
     let fan_out = !args.each.is_empty() || args.shard.is_some();
 
     // Source ref: --from flag > config `from` > HEAD.
@@ -188,11 +192,14 @@ fn run_interactive(args: &RunArgs, from: &str, config: &Config) -> Result<i32> {
 /// Run each ref (`--each`) or shard (`--shard`) in its own worktree in parallel.
 /// Worktree creation/cleanup is serialized (git mutates the repo); the commands
 /// themselves run concurrently. Returns 0 only if every job succeeded.
+/// One fan-out job: (label, source ref, extra environment variables).
+type FanJob = (String, String, Vec<(String, String)>);
+
 fn run_fanout(args: &RunArgs, on_exit: OnExit, from: &str) -> Result<i32> {
     signal::install();
 
     // (label, from_ref, extra_env) per job.
-    let jobs: Vec<(String, String, Vec<(String, String)>)> = if let Some(n) = args.shard {
+    let jobs: Vec<FanJob> = if let Some(n) = args.shard {
         if n == 0 {
             bail!("--shard must be >= 1");
         }
@@ -211,7 +218,13 @@ fn run_fanout(args: &RunArgs, on_exit: OnExit, from: &str) -> Result<i32> {
     } else {
         args.each
             .iter()
-            .map(|r| (r.clone(), r.clone(), vec![("OWT_REF".to_string(), r.clone())]))
+            .map(|r| {
+                (
+                    r.clone(),
+                    r.clone(),
+                    vec![("OWT_REF".to_string(), r.clone())],
+                )
+            })
             .collect()
     };
 
@@ -437,8 +450,8 @@ fn cmd_list(all: bool, json: bool) -> Result<i32> {
     }
 
     println!(
-        "{:<20} {:<22} {:<9} {:<8} {}",
-        "NAME", "BRANCH", "SOURCE", "STATUS", "PATH"
+        "{:<20} {:<22} {:<9} {:<8} PATH",
+        "NAME", "BRANCH", "SOURCE", "STATUS"
     );
     for v in &views {
         println!(
@@ -542,4 +555,3 @@ fn confirm(prompt: &str) -> Result<bool> {
     let a = line.trim().to_ascii_lowercase();
     Ok(a == "y" || a == "yes")
 }
-

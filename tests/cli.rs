@@ -238,6 +238,46 @@ fn dir_and_parent_dir_are_mutually_exclusive() {
 }
 
 #[test]
+fn unknown_flag_errors_instead_of_becoming_the_command() {
+    let env = setup();
+    // A mistyped owt flag must be reported, not silently swallowed into the
+    // command (which would build a worktree and try to run the flag as a program).
+    let out = owt(
+        &env,
+        &[
+            "--parnet-dir",
+            "x",
+            "--",
+            "git",
+            "rev-parse",
+            "--show-toplevel",
+        ],
+    );
+    assert!(!out.status.success());
+    assert!(
+        String::from_utf8_lossy(&out.stderr).contains("unexpected argument"),
+        "stderr should report the bad flag: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    // No worktree was created.
+    assert_eq!(linked_worktree_count(env.repo.path()), 0);
+}
+
+#[test]
+fn command_flags_after_separator_still_work() {
+    let env = setup();
+    // The command's own hyphenated args (after `--`) must reach the command,
+    // not be parsed as owt flags.
+    let out = owt(&env, &["--", "git", "rev-parse", "--show-toplevel"]);
+    assert!(
+        out.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(!stdout(&out).trim().is_empty());
+}
+
+#[test]
 fn detach_conflicts_with_keep() {
     let env = setup();
     // keep needs a branch to retain its commit; detach has none.

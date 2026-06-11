@@ -79,8 +79,14 @@ pub struct RunArgs {
     #[arg(long)]
     pub detach: bool,
 
-    /// The command (and its arguments) to run inside the worktree.
-    #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+    /// The command (and its arguments) to run inside the worktree. Put it after
+    /// `--` so its own flags aren't parsed as owt flags, e.g. `owt -- eslint --fix`.
+    ///
+    /// We deliberately do NOT set `allow_hyphen_values`: with it, an unknown or
+    /// mistyped owt flag (e.g. `--parnet-dir`) would be silently swallowed into
+    /// the command instead of reported. Without it, the command's own hyphenated
+    /// args still work because they follow the `--` separator.
+    #[arg(trailing_var_arg = true)]
     pub command: Vec<String>,
 }
 

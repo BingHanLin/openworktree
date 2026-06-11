@@ -22,6 +22,33 @@ pub struct Session {
     cleaned: bool,
 }
 
+/// How a worktree session is used. Determines whether the worktree is
+/// auto-cleaned on finish and the `mode` label stored in metadata.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum Mode {
+    /// `owt -- <cmd>`: run a command, then clean up (auto-cleaned).
+    Oneshot,
+    /// `owt -i`: drop into a shell; kept until `owt clean`.
+    Interactive,
+    /// `owt new`: create and exit; kept until `owt clean`.
+    Standalone,
+}
+
+impl Mode {
+    /// Oneshot sessions clean themselves up; the rest persist until `owt clean`.
+    fn auto_clean(self) -> bool {
+        matches!(self, Mode::Oneshot)
+    }
+
+    fn label(self) -> &'static str {
+        match self {
+            Mode::Oneshot => "oneshot",
+            Mode::Interactive => "interactive",
+            Mode::Standalone => "standalone",
+        }
+    }
+}
+
 /// Parameters for creating a session.
 pub struct CreateOpts<'a> {
     pub from: &'a str,
@@ -35,7 +62,9 @@ pub struct CreateOpts<'a> {
     pub on_exit: OnExit,
     /// Create the worktree detached (no `owt/<name>` branch).
     pub detach: bool,
-    pub interactive: bool,
+    /// How the worktree is used, which decides auto-cleanup and the recorded
+    /// mode label.
+    pub mode: Mode,
     pub command: Vec<String>,
     /// Print step-by-step progress to stderr (off for fan-out to avoid interleaving).
     pub progress: bool,
@@ -92,7 +121,7 @@ impl Session {
             worktree_path: worktree_path.clone(),
             on_exit: opts.on_exit,
             command: opts.command.clone(),
-            auto_clean: !opts.interactive,
+            auto_clean: opts.mode.auto_clean(),
             cleaned: false,
         };
 
@@ -129,12 +158,7 @@ impl Session {
             base_commit,
             worktree_path: worktree_path.to_string_lossy().to_string(),
             repo_common_dir: common_dir.to_string_lossy().to_string(),
-            mode: if opts.interactive {
-                "interactive"
-            } else {
-                "oneshot"
-            }
-            .to_string(),
+            mode: opts.mode.label().to_string(),
             command: opts.command,
             on_exit: match opts.on_exit {
                 OnExit::Discard => "discard",

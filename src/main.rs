@@ -21,8 +21,8 @@ use config::Config;
 use anyhow::{bail, Context, Result};
 use clap::Parser;
 
-use cli::{Cli, OnExit, RunArgs, Sub};
-use session::{CreateOpts, Session};
+use cli::{Cli, CreateArgs, OnExit, RunArgs, Sub};
+use session::{CreateOpts, Mode, Session};
 
 fn main() {
     let code = match run_cli() {
@@ -68,6 +68,7 @@ fn expand_alias(argv: Vec<String>) -> Result<Vec<String>> {
 
 fn dispatch(cli: Cli) -> Result<i32> {
     match cli.sub {
+        Some(Sub::New { create }) => cmd_new(&create),
         Some(Sub::List { all, json }) => cmd_list(all, json),
         Some(Sub::Clean {
             name,
@@ -91,12 +92,12 @@ fn run(args: RunArgs) -> Result<i32> {
 
     // A kept worktree commits onto its branch; a detached one has none, so the
     // commit would be unreachable. Reject the combination up front.
-    if args.detach && on_exit == OnExit::Keep {
+    if args.create.detach && on_exit == OnExit::Keep {
         bail!("--detach cannot be combined with --keep / --on-exit keep (keep needs a branch to retain the commit)");
     }
 
     // --dir is a verbatim path; --parent-dir is a parent that gets the auto subdir.
-    if args.dir.is_some() && args.parent_dir.is_some() {
+    if args.create.dir.is_some() && args.create.parent_dir.is_some() {
         bail!("--dir and --parent-dir are mutually exclusive");
     }
 
@@ -104,6 +105,7 @@ fn run(args: RunArgs) -> Result<i32> {
 
     // Source ref: --from flag > config `from` > HEAD.
     let from = args
+        .create
         .from
         .clone()
         .or_else(|| config.from.clone())
@@ -137,7 +139,7 @@ fn run(args: RunArgs) -> Result<i32> {
         }
         // Each fan-out job creates its own auto-named worktree, so a single
         // --name / --dir cannot apply to all of them.
-        if args.name.is_some() || args.dir.is_some() {
+        if args.create.name.is_some() || args.create.dir.is_some() {
             bail!("--name / --dir cannot be used with --each / --shard (each job gets its own worktree)");
         }
         if args.command.is_empty() {
@@ -155,14 +157,14 @@ fn run(args: RunArgs) -> Result<i32> {
 fn run_oneshot(args: &RunArgs, on_exit: OnExit, from: &str) -> Result<i32> {
     let mut session = Session::create(CreateOpts {
         from,
-        name: args.name.as_deref(),
-        dir: args.dir.as_deref(),
-        parent_dir: args.parent_dir.as_deref(),
-        include: &args.include,
-        setup: args.setup.as_deref(),
+        name: args.create.name.as_deref(),
+        dir: args.create.dir.as_deref(),
+        parent_dir: args.create.parent_dir.as_deref(),
+        include: &args.create.include,
+        setup: args.create.setup.as_deref(),
         on_exit,
-        detach: args.detach,
-        interactive: false,
+        detach: args.create.detach,
+        mode: Mode::Oneshot,
         command: args.command.clone(),
         progress: true,
     })?;
@@ -178,14 +180,14 @@ fn run_oneshot(args: &RunArgs, on_exit: OnExit, from: &str) -> Result<i32> {
 fn run_interactive(args: &RunArgs, from: &str, config: &Config) -> Result<i32> {
     let session = Session::create(CreateOpts {
         from,
-        name: args.name.as_deref(),
-        dir: args.dir.as_deref(),
-        parent_dir: args.parent_dir.as_deref(),
-        include: &args.include,
-        setup: args.setup.as_deref(),
+        name: args.create.name.as_deref(),
+        dir: args.create.dir.as_deref(),
+        parent_dir: args.create.parent_dir.as_deref(),
+        include: &args.create.include,
+        setup: args.create.setup.as_deref(),
         on_exit: OnExit::Discard,
-        detach: args.detach,
-        interactive: true,
+        detach: args.create.detach,
+        mode: Mode::Interactive,
         command: Vec::new(),
         progress: true,
     })?;
@@ -206,6 +208,45 @@ fn run_interactive(args: &RunArgs, from: &str, config: &Config) -> Result<i32> {
         .with_context(|| format!("launching shell '{shell}'"))?;
 
     Ok(status.code().unwrap_or(0))
+}
+
+/// `owt new`: create a worktree and leave it for the user. No command runs, no
+/// shell is launched, and the worktree is NOT auto-cleaned. The worktree path is
+/// printed to stdout (progress goes to stderr) so `cd "$(owt new)"` works; clean
+/// it up later with `owt clean`.
+fn cmd_new(create: &CreateArgs) -> Result<i32> {
+    let config = Config::load()?;
+
+    if create.dir.is_some() && create.parent_dir.is_some() {
+        bail!("--dir and --parent-dir are mutually exclusive");
+    }
+
+    let from = create
+        .from
+        .clone()
+        .or_else(|| config.from.clone())
+        .unwrap_or_else(|| "HEAD".to_string());
+
+    let session = Session::create(CreateOpts {
+        from: &from,
+        name: create.name.as_deref(),
+        dir: create.dir.as_deref(),
+        parent_dir: create.parent_dir.as_deref(),
+        include: &create.include,
+        setup: create.setup.as_deref(),
+        // Unused for standalone: it never auto-cleans and finish() is not called.
+        on_exit: OnExit::Discard,
+        detach: create.detach,
+        mode: Mode::Standalone,
+        command: Vec::new(),
+        progress: true,
+    })?;
+
+    // The path on stdout is the machine-readable result (`cd "$(owt new)"`); all
+    // progress already went to stderr. Standalone sessions persist, so we do not
+    // call finish(); the Drop guard is a no-op (auto_clean is false).
+    println!("{}", session.worktree_path.display());
+    Ok(0)
 }
 
 /// Run each ref (`--each`) or shard (`--shard`) in its own worktree in parallel.
@@ -258,10 +299,10 @@ fn run_fanout(args: &RunArgs, on_exit: OnExit, from: &str) -> Result<i32> {
         let repo_lock = repo_lock.clone();
         let print_lock = print_lock.clone();
         let command = args.command.clone();
-        let include = args.include.clone();
-        let setup = args.setup.clone();
-        let detach = args.detach;
-        let parent_dir = args.parent_dir.clone();
+        let include = args.create.include.clone();
+        let setup = args.create.setup.clone();
+        let detach = args.create.detach;
+        let parent_dir = args.create.parent_dir.clone();
         handles.push(std::thread::spawn(move || {
             run_job(
                 &repo_lock,
@@ -324,7 +365,7 @@ fn run_job(
             setup,
             on_exit,
             detach,
-            interactive: false,
+            mode: Mode::Oneshot,
             command: command.to_vec(),
             progress: false,
         })

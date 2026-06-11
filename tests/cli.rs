@@ -194,6 +194,62 @@ fn detach_creates_no_branch_but_stays_tracked() {
 }
 
 #[test]
+fn new_creates_persistent_worktree_and_prints_path() {
+    let env = setup();
+    let out = owt(&env, &["new", "--name", "foo"]);
+    assert!(
+        out.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+
+    // stdout is exactly the worktree path (for `cd "$(owt new)"`).
+    let path = stdout(&out).trim().to_string();
+    assert!(
+        Path::new(&path).is_dir(),
+        "printed path should exist: {path}"
+    );
+    // Created with a branch by default; the worktree persists (no auto-clean).
+    assert!(git_out(env.repo.path(), &["branch", "--list", "owt/foo"]).contains("owt/foo"));
+    assert_eq!(linked_worktree_count(env.repo.path()), 1);
+
+    // Listed as standalone, and a plain `clean` must NOT remove it.
+    let s = stdout(&owt(&env, &["list"]));
+    assert!(s.contains("standalone"), "should be standalone: {s}");
+    let _ = owt(&env, &["clean", "--yes"]);
+    assert_eq!(
+        linked_worktree_count(env.repo.path()),
+        1,
+        "default clean must leave standalone worktrees"
+    );
+
+    // Removable by name.
+    let out = owt(&env, &["clean", "foo", "--yes"]);
+    assert!(out.status.success());
+    assert_eq!(linked_worktree_count(env.repo.path()), 0);
+    assert!(git_out(env.repo.path(), &["branch", "--list", "owt/foo"])
+        .trim()
+        .is_empty());
+}
+
+#[test]
+fn new_detach_creates_no_branch() {
+    let env = setup();
+    let out = owt(&env, &["new", "--detach", "--name", "nob"]);
+    assert!(out.status.success());
+    assert!(
+        git_out(env.repo.path(), &["branch", "--list", "owt/*"])
+            .trim()
+            .is_empty(),
+        "--detach must not create a branch"
+    );
+    // Still tracked (standalone) so it can be cleaned by name.
+    let out = owt(&env, &["clean", "nob", "--yes"]);
+    assert!(out.status.success());
+    assert_eq!(linked_worktree_count(env.repo.path()), 0);
+}
+
+#[test]
 fn parent_dir_places_auto_subdir_under_parent() {
     let env = setup();
     let parent = env.cache.path().join("myparent");

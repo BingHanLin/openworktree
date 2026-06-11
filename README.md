@@ -92,6 +92,25 @@ Drops you into a shell inside a new worktree. The worktree is **not** auto-clean
 when you exit — use `owt clean` later. The shell is chosen by `--shell`, then the
 `shell` config key, then `$SHELL` / `%ComSpec%`.
 
+### Create and walk away (`owt new`)
+
+```sh
+owt new                      # create a worktree, print its path, exit
+cd "$(owt new)"              # path is printed to stdout, so this just works
+owt new --detach --name wip  # honors --from / --name / --dir / --parent-dir / --include / --setup / --detach
+```
+
+`owt new` creates the worktree and exits immediately — it runs **no command** and
+launches **no shell**, and the worktree is **not** auto-cleaned. The worktree path
+is printed to **stdout** (all progress goes to stderr), so it composes with
+`cd "$(owt new)"`. Use it when you want a sandbox to poke at by hand without `owt`
+staying in the foreground (unlike `owt -i`).
+
+It creates an `owt/<name>` branch by default (so any commits you make are kept);
+pass `--detach` for a branchless throwaway. These worktrees show up in
+`owt list` as **standalone** and are **not** removed by a plain `owt clean` —
+remove them explicitly with `owt clean <name>` (or `owt clean --all`).
+
 ### Fan-out (parallel)
 
 Run the same command across several refs, each in its own worktree, in parallel:
@@ -232,7 +251,7 @@ config/*.local
 from a crash or `kill -9`).
 
 ```sh
-owt list            # worktrees owt created (running / orphan)
+owt list            # worktrees owt created (running / orphan / standalone)
 owt list --all      # every non-main worktree, incl. external ones (read-only)
 owt list --json     # machine-readable
 ```
@@ -243,6 +262,11 @@ owt clean <name>          # remove one specific owt worktree
 owt clean --running       # also remove still-running owt worktrees
 owt clean --all           # remove ALL non-main worktrees, incl. external ones
 ```
+
+Worktrees created by `owt new` are listed as **standalone** and are intentionally
+left alone by `owt clean` and `owt clean --running` — they have no owning process,
+so they aren't "orphans". Remove them explicitly with `owt clean <name>` or
+`owt clean --all`.
 
 `clean` flags: `--force` (override uncommitted changes / locks), `--yes` (skip the
 confirmation prompt), `--dry-run` (show what would happen).
@@ -303,6 +327,6 @@ be accidentally committed.
 
 ## Status
 
-Implemented: one-shot & interactive runs (with shell selection), exit-code
-passthrough, Ctrl+C-safe cleanup, `.worktreeinclude`, `list`, `clean`, and
-fan-out (`--each` / `--shard`).
+Implemented: one-shot & interactive runs (with shell selection), `owt new`
+(create-and-leave), exit-code passthrough, Ctrl+C-safe cleanup,
+`.worktreeinclude`, `list`, `clean`, and fan-out (`--each` / `--shard`).

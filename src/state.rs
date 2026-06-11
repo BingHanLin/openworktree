@@ -21,6 +21,9 @@ pub enum Source {
 pub enum Liveness {
     Running,
     Orphan,
+    /// An `owt new` worktree: intentionally persistent, with no owning process.
+    /// Not auto-removed by a plain `owt clean` (only by name or `--all`).
+    Standalone,
     #[serde(rename = "-")]
     Na,
 }
@@ -83,7 +86,11 @@ pub fn collect() -> Result<Vec<View>> {
         let (source, name, status) = if is_main {
             (Source::Main, None, Liveness::Na)
         } else if let Some(m) = by_path {
-            let live = if is_alive(m.pid) {
+            // `owt new` worktrees have no owning process by design, so a dead pid
+            // is expected — flag them standalone instead of orphan.
+            let live = if m.mode == "standalone" {
+                Liveness::Standalone
+            } else if is_alive(m.pid) {
                 Liveness::Running
             } else {
                 Liveness::Orphan
@@ -149,13 +156,15 @@ pub fn plan_clean(name: Option<&str>, running: bool, all: bool, force: bool) -> 
             continue;
         }
 
-        // Scope selection.
+        // Scope selection. Standalone (`owt new`) worktrees are intentionally
+        // persistent, so the broad scopes leave them alone — only an explicit
+        // name or `--all` removes them.
         let selected = if let Some(n) = name {
             view.source == Source::Owt && view.name.as_deref() == Some(n)
         } else if all {
             true // all non-main worktrees, including external
         } else if running {
-            view.source == Source::Owt
+            view.source == Source::Owt && view.status != Liveness::Standalone
         } else {
             view.source == Source::Owt && view.status == Liveness::Orphan
         };

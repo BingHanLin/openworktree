@@ -48,9 +48,15 @@ pub struct RunArgs {
     #[arg(long)]
     pub name: Option<String>,
 
-    /// Where to place the worktree. Defaults to the app cache directory.
+    /// Where to place the worktree (used verbatim). Defaults to the app cache directory.
     #[arg(long)]
     pub dir: Option<String>,
+
+    /// Parent directory to create the worktree under, keeping the automatic
+    /// `<repo>__<name>` subdirectory (unlike --dir, which is verbatim). Works
+    /// with --each / --shard; mutually exclusive with --dir.
+    #[arg(long)]
+    pub parent_dir: Option<String>,
 
     /// Extra path/glob to copy into the worktree (repeatable; adds to .worktreeinclude).
     #[arg(long)]

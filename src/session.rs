@@ -27,6 +27,9 @@ pub struct CreateOpts<'a> {
     pub from: &'a str,
     pub name: Option<&'a str>,
     pub dir: Option<&'a str>,
+    /// Parent directory the worktree's auto `<repo>__<name>` subdir goes under.
+    /// Mutually exclusive with `dir` (which is verbatim).
+    pub parent_dir: Option<&'a str>,
     pub include: &'a [String],
     pub setup: Option<&'a str>,
     pub on_exit: OnExit,
@@ -54,10 +57,17 @@ impl Session {
             Some(format!("owt/{name}"))
         };
 
-        // Resolve the worktree path.
-        let worktree_path = match opts.dir {
-            Some(d) => PathBuf::from(d),
-            None => metadata::default_worktree_base()?.join(format!("{repo}__{name}")),
+        // Resolve the worktree path. --dir is used verbatim; otherwise the
+        // worktree gets an auto `<repo>__<name>` subdir under either --parent-dir
+        // or the default cache base.
+        let worktree_path = if let Some(d) = opts.dir {
+            PathBuf::from(d)
+        } else {
+            let base = match opts.parent_dir {
+                Some(b) => PathBuf::from(b),
+                None => metadata::default_worktree_base()?,
+            };
+            base.join(format!("{repo}__{name}"))
         };
         if worktree_path.exists() {
             bail!("worktree path already exists: {}", worktree_path.display());

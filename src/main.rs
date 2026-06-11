@@ -95,6 +95,11 @@ fn run(args: RunArgs) -> Result<i32> {
         bail!("--detach cannot be combined with --keep / --on-exit keep (keep needs a branch to retain the commit)");
     }
 
+    // --dir is a verbatim path; --parent-dir is a parent that gets the auto subdir.
+    if args.dir.is_some() && args.parent_dir.is_some() {
+        bail!("--dir and --parent-dir are mutually exclusive");
+    }
+
     let fan_out = !args.each.is_empty() || args.shard.is_some();
 
     // Source ref: --from flag > config `from` > HEAD.
@@ -152,6 +157,7 @@ fn run_oneshot(args: &RunArgs, on_exit: OnExit, from: &str) -> Result<i32> {
         from,
         name: args.name.as_deref(),
         dir: args.dir.as_deref(),
+        parent_dir: args.parent_dir.as_deref(),
         include: &args.include,
         setup: args.setup.as_deref(),
         on_exit,
@@ -174,6 +180,7 @@ fn run_interactive(args: &RunArgs, from: &str, config: &Config) -> Result<i32> {
         from,
         name: args.name.as_deref(),
         dir: args.dir.as_deref(),
+        parent_dir: args.parent_dir.as_deref(),
         include: &args.include,
         setup: args.setup.as_deref(),
         on_exit: OnExit::Discard,
@@ -254,12 +261,14 @@ fn run_fanout(args: &RunArgs, on_exit: OnExit, from: &str) -> Result<i32> {
         let include = args.include.clone();
         let setup = args.setup.clone();
         let detach = args.detach;
+        let parent_dir = args.parent_dir.clone();
         handles.push(std::thread::spawn(move || {
             run_job(
                 &repo_lock,
                 &print_lock,
                 &label,
                 &from,
+                parent_dir.as_deref(),
                 &include,
                 setup.as_deref(),
                 on_exit,
@@ -296,6 +305,7 @@ fn run_job(
     print_lock: &Mutex<()>,
     label: &str,
     from: &str,
+    parent_dir: Option<&str>,
     include: &[String],
     setup: Option<&str>,
     on_exit: OnExit,
@@ -309,6 +319,7 @@ fn run_job(
             from,
             name: None,
             dir: None,
+            parent_dir,
             include,
             setup,
             on_exit,

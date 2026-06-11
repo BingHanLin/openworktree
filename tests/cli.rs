@@ -194,6 +194,50 @@ fn detach_creates_no_branch_but_stays_tracked() {
 }
 
 #[test]
+fn parent_dir_places_auto_subdir_under_parent() {
+    let env = setup();
+    let parent = env.cache.path().join("myparent");
+    let out = owt(
+        &env,
+        &[
+            "--parent-dir",
+            parent.to_str().unwrap(),
+            "--",
+            "git",
+            "rev-parse",
+            "--show-toplevel",
+        ],
+    );
+    assert!(
+        out.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+
+    // The worktree sat directly under the given parent dir, in an auto subdir.
+    let toplevel = stdout(&out).trim().to_string();
+    let got_parent = Path::new(&toplevel).parent().unwrap();
+    assert_eq!(
+        got_parent.canonicalize().ok(),
+        parent.canonicalize().ok(),
+        "worktree should sit directly under --parent-dir (got {toplevel})"
+    );
+    // Oneshot discard cleaned it up.
+    assert_eq!(linked_worktree_count(env.repo.path()), 0);
+}
+
+#[test]
+fn dir_and_parent_dir_are_mutually_exclusive() {
+    let env = setup();
+    let out = owt(
+        &env,
+        &["--dir", "x", "--parent-dir", "y", "--", "git", "status"],
+    );
+    assert!(!out.status.success());
+    assert_eq!(linked_worktree_count(env.repo.path()), 0);
+}
+
+#[test]
 fn detach_conflicts_with_keep() {
     let env = setup();
     // keep needs a branch to retain its commit; detach has none.

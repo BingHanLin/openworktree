@@ -124,7 +124,8 @@ exit-code summary.
 |------|---------|-------------|
 | `--from <ref>` | config `from`, else `HEAD` | Source ref the worktree is based on |
 | `--name <name>` | random `adjective-noun` | Worktree / branch name (errors if taken) |
-| `--dir <path>` | `<cache>/worktrees/<repo>__<name>` | Where to put the worktree |
+| `--dir <path>` | `<cache>/worktrees/<repo>__<name>` | Exact worktree path (used verbatim) |
+| `--parent-dir <path>` | — | Parent dir to create the auto `<repo>__<name>` subdir under |
 | `--include <glob>` | — | Extra path/glob to copy in (repeatable) |
 | `--setup <cmd>` | — | Command to run before the main command (e.g. `npm ci`) |
 | `--on-exit <discard\|keep>` | `discard` | What to do with the worktree at the end (one-shot) |
@@ -143,12 +144,62 @@ exit-code summary.
 
 The `keep` auto-commit message is `owt: <command> @ <timestamp>`.
 
+### Detached worktrees (`--detach`)
+
 By default `owt` creates an `owt/<name>` branch for each worktree. Pass
-`--detach` to skip that and build the worktree in **detached HEAD** instead — no
-branch is created or occupied, keeping your branch namespace clean. `owt` still
-tracks the worktree (via its central index), so `list` and `clean` work the same.
-`--detach` is incompatible with `--keep`: `keep` persists its commit on the
-branch, which a detached worktree has none of.
+`--detach` to skip that and build the worktree in **detached HEAD** instead:
+
+```sh
+owt --detach -- npm test
+```
+
+No branch is created or occupied, so the branch namespace stays clean — handy
+for throwaway runs and for agents spinning up many sandboxes. `owt` still tracks
+the worktree (via its central index, matched by path rather than branch), so
+`list` and `clean` manage detached worktrees exactly like branch-backed ones.
+
+`--detach` is incompatible with `--keep` (and `--on-exit keep`): `keep` retains
+its auto-commit on the branch, which a detached worktree has none of — the commit
+would become unreachable and be garbage-collected, so the combination is rejected
+up front.
+
+### Where the worktree goes (`--dir` / `--parent-dir`)
+
+By default, worktrees land under the cache dir at
+`<cache>/worktrees/<repo>__<name>` (the `<repo>__<name>` subdir is added for you;
+`<cache>` is the platform cache dir, overridable with `OWT_CACHE_DIR`). There are
+two ways to override the location:
+
+**`--parent-dir <path>`** — relocate just the parent. The automatic
+`<repo>__<name>` subdir is still appended, so each run gets its own uniquely
+named directory:
+
+```sh
+owt --parent-dir D:/tmp -- npm test
+# worktree at D:/tmp/<repo>__<name>, e.g. D:/tmp/myrepo__brave-otter
+```
+
+Because every run gets a distinct subdir, `--parent-dir` **works with
+`--each` / `--shard`** — all jobs share the parent while each lands in its own
+auto-named directory.
+
+**`--dir <path>`** — set the exact worktree path, used **verbatim** (no
+`<repo>__<name>` suffix appended):
+
+```sh
+owt --dir D:/tmp/t1   -- npm test   # worktree at D:/tmp/t1 (absolute, as-is)
+owt --dir ../mytree   -- npm test   # relative to where you run owt
+```
+
+Notes for both:
+
+- Relative paths resolve against the directory you invoke `owt` from (it does not
+  `cd` first).
+- The target worktree directory **must not already exist** (a `git worktree add`
+  requirement); missing parent directories are created for you.
+- `--dir` and `--parent-dir` are mutually exclusive. `--dir` cannot be combined
+  with `--each` / `--shard` (each fan-out job needs its own distinct worktree —
+  use `--parent-dir` for that).
 
 ## `.worktreeinclude`
 

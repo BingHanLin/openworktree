@@ -14,7 +14,9 @@ pub const SCHEMA_VERSION: u32 = 1;
 pub struct Metadata {
     pub schema_version: u32,
     pub name: String,
-    pub branch: String,
+    /// The `owt/<name>` branch, or `None` for detached worktrees (`--detach`).
+    #[serde(default)]
+    pub branch: Option<String>,
     pub from_ref: String,
     pub base_commit: String,
     pub worktree_path: String,
@@ -71,6 +73,15 @@ impl Metadata {
         std::fs::write(&index_file, &json)
             .with_context(|| format!("writing {}", index_file.display()))?;
         Ok(())
+    }
+
+    /// Whether a central index entry exists for `name` (a live or orphaned
+    /// session already owns it). Used to keep names unique for detached
+    /// worktrees, which have no branch to collide on.
+    pub fn index_exists(name: &str) -> bool {
+        index_dir()
+            .map(|d| d.join(format!("{name}.json")).exists())
+            .unwrap_or(false)
     }
 
     /// Remove the central index entry (the in-tree copy goes away with the dir).

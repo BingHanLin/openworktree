@@ -162,6 +162,135 @@ fn keep_retains_branch_without_leaking_metadata() {
 }
 
 #[test]
+fn detach_creates_no_branch_but_stays_tracked() {
+    let env = setup();
+    // Interactive keeps the worktree (never auto-cleaned); --detach must build it
+    // in detached HEAD without creating an owt/* branch. `git` is a stand-in
+    // shell that exits immediately.
+    let out = owt(&env, &["-i", "--detach", "--name", "dx", "--shell", "git"]);
+    let _ = out.status;
+
+    // The worktree exists but no branch was created.
+    assert_eq!(linked_worktree_count(env.repo.path()), 1);
+    assert!(
+        git_out(env.repo.path(), &["branch", "--list", "owt/*"])
+            .trim()
+            .is_empty(),
+        "detached worktree must not create an owt/* branch"
+    );
+
+    // It is still recognized as owt-owned via the central index (by path),
+    // not via a branch prefix.
+    let s = stdout(&owt(&env, &["list"]));
+    assert!(
+        s.contains("dx"),
+        "detached worktree should be listed as owt: {s}"
+    );
+
+    // And clean can target it by name.
+    let out = owt(&env, &["clean", "dx", "--yes"]);
+    assert!(out.status.success());
+    assert_eq!(linked_worktree_count(env.repo.path()), 0);
+}
+
+#[test]
+fn parent_dir_places_auto_subdir_under_parent() {
+    let env = setup();
+    let parent = env.cache.path().join("myparent");
+    let out = owt(
+        &env,
+        &[
+            "--parent-dir",
+            parent.to_str().unwrap(),
+            "--",
+            "git",
+            "rev-parse",
+            "--show-toplevel",
+        ],
+    );
+    assert!(
+        out.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+
+    // The worktree sat directly under the given parent dir, in an auto subdir.
+    let toplevel = stdout(&out).trim().to_string();
+    let got_parent = Path::new(&toplevel).parent().unwrap();
+    assert_eq!(
+        got_parent.canonicalize().ok(),
+        parent.canonicalize().ok(),
+        "worktree should sit directly under --parent-dir (got {toplevel})"
+    );
+    // Oneshot discard cleaned it up.
+    assert_eq!(linked_worktree_count(env.repo.path()), 0);
+}
+
+#[test]
+fn dir_and_parent_dir_are_mutually_exclusive() {
+    let env = setup();
+    let out = owt(
+        &env,
+        &["--dir", "x", "--parent-dir", "y", "--", "git", "status"],
+    );
+    assert!(!out.status.success());
+    assert_eq!(linked_worktree_count(env.repo.path()), 0);
+}
+
+#[test]
+fn unknown_flag_errors_instead_of_becoming_the_command() {
+    let env = setup();
+    // A mistyped owt flag must be reported, not silently swallowed into the
+    // command (which would build a worktree and try to run the flag as a program).
+    let out = owt(
+        &env,
+        &[
+            "--parnet-dir",
+            "x",
+            "--",
+            "git",
+            "rev-parse",
+            "--show-toplevel",
+        ],
+    );
+    assert!(!out.status.success());
+    assert!(
+        String::from_utf8_lossy(&out.stderr).contains("unexpected argument"),
+        "stderr should report the bad flag: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    // No worktree was created.
+    assert_eq!(linked_worktree_count(env.repo.path()), 0);
+}
+
+#[test]
+fn command_flags_after_separator_still_work() {
+    let env = setup();
+    // The command's own hyphenated args (after `--`) must reach the command,
+    // not be parsed as owt flags.
+    let out = owt(&env, &["--", "git", "rev-parse", "--show-toplevel"]);
+    assert!(
+        out.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(!stdout(&out).trim().is_empty());
+}
+
+#[test]
+fn detach_conflicts_with_keep() {
+    let env = setup();
+    // keep needs a branch to retain its commit; detach has none.
+    let out = owt(&env, &["--detach", "--keep", "--", SH[0], SH[1], "echo hi"]);
+    assert!(!out.status.success());
+    assert_eq!(
+        linked_worktree_count(env.repo.path()),
+        0,
+        "must not create a worktree on a rejected combo"
+    );
+}
+
+#[test]
 fn worktreeinclude_copies_and_negates_and_extra_include() {
     let env = setup();
     let repo = env.repo.path();

@@ -48,9 +48,15 @@ pub struct RunArgs {
     #[arg(long)]
     pub name: Option<String>,
 
-    /// Where to place the worktree. Defaults to the app cache directory.
+    /// Where to place the worktree (used verbatim). Defaults to the app cache directory.
     #[arg(long)]
     pub dir: Option<String>,
+
+    /// Parent directory to create the worktree under, keeping the automatic
+    /// `<repo>__<name>` subdirectory (unlike --dir, which is verbatim). Works
+    /// with --each / --shard; mutually exclusive with --dir.
+    #[arg(long)]
+    pub parent_dir: Option<String>,
 
     /// Extra path/glob to copy into the worktree (repeatable; adds to .worktreeinclude).
     #[arg(long)]
@@ -68,8 +74,19 @@ pub struct RunArgs {
     #[arg(long)]
     pub keep: bool,
 
-    /// The command (and its arguments) to run inside the worktree.
-    #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+    /// Create the worktree in detached HEAD, without making an `owt/<name>`
+    /// branch. Keeps the branch namespace clean; conflicts with --keep.
+    #[arg(long)]
+    pub detach: bool,
+
+    /// The command (and its arguments) to run inside the worktree. Put it after
+    /// `--` so its own flags aren't parsed as owt flags, e.g. `owt -- eslint --fix`.
+    ///
+    /// We deliberately do NOT set `allow_hyphen_values`: with it, an unknown or
+    /// mistyped owt flag (e.g. `--parnet-dir`) would be silently swallowed into
+    /// the command instead of reported. Without it, the command's own hyphenated
+    /// args still work because they follow the `--` separator.
+    #[arg(trailing_var_arg = true)]
     pub command: Vec<String>,
 }
 

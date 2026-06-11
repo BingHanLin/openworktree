@@ -66,7 +66,15 @@ pub fn collect() -> Result<Vec<View>> {
         }
         let Some(path) = path else { continue };
 
-        let is_main = normalize(Path::new(&path)) == main_path;
+        let normalized = normalize(Path::new(&path));
+        let is_main = normalized == main_path;
+
+        // Prefer the central index, which matches by path and so recognizes
+        // detached worktrees (no `owt/<name>` branch). Fall back to the branch
+        // prefix for owt worktrees that predate the index or lost their entry.
+        let by_path = index
+            .iter()
+            .find(|m| normalize(Path::new(&m.worktree_path)) == normalized);
         let owt_name = branch
             .as_deref()
             .and_then(|b| b.strip_prefix("owt/"))
@@ -74,6 +82,13 @@ pub fn collect() -> Result<Vec<View>> {
 
         let (source, name, status) = if is_main {
             (Source::Main, None, Liveness::Na)
+        } else if let Some(m) = by_path {
+            let live = if is_alive(m.pid) {
+                Liveness::Running
+            } else {
+                Liveness::Orphan
+            };
+            (Source::Owt, Some(m.name.clone()), live)
         } else if let Some(n) = owt_name {
             let live = match index.iter().find(|m| m.name == n) {
                 Some(m) if is_alive(m.pid) => Liveness::Running,

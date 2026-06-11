@@ -40,6 +40,33 @@ pub struct RunArgs {
     #[arg(long)]
     pub shard: Option<usize>,
 
+    /// Worktree creation options (shared with `owt new`).
+    #[command(flatten)]
+    pub create: CreateArgs,
+
+    /// What to do with the worktree when a oneshot command finishes.
+    #[arg(long, value_enum, default_value_t = OnExit::Discard)]
+    pub on_exit: OnExit,
+
+    /// Shorthand for `--on-exit keep`.
+    #[arg(long)]
+    pub keep: bool,
+
+    /// The command (and its arguments) to run inside the worktree. Put it after
+    /// `--` so its own flags aren't parsed as owt flags, e.g. `owt -- eslint --fix`.
+    ///
+    /// We deliberately do NOT set `allow_hyphen_values`: with it, an unknown or
+    /// mistyped owt flag (e.g. `--parnet-dir`) would be silently swallowed into
+    /// the command instead of reported. Without it, the command's own hyphenated
+    /// args still work because they follow the `--` separator.
+    #[arg(trailing_var_arg = true)]
+    pub command: Vec<String>,
+}
+
+/// Options that control how a worktree is created. Shared by the default run
+/// (and its interactive / fan-out variants) and the `owt new` subcommand.
+#[derive(Args, Debug)]
+pub struct CreateArgs {
     /// Source ref the worktree is created from (default: config `from`, else HEAD).
     #[arg(long)]
     pub from: Option<String>,
@@ -62,32 +89,14 @@ pub struct RunArgs {
     #[arg(long)]
     pub include: Vec<String>,
 
-    /// Command to run before the main command (e.g. "npm ci").
+    /// Command to run right after creating the worktree (e.g. "npm ci").
     #[arg(long)]
     pub setup: Option<String>,
-
-    /// What to do with the worktree when a oneshot command finishes.
-    #[arg(long, value_enum, default_value_t = OnExit::Discard)]
-    pub on_exit: OnExit,
-
-    /// Shorthand for `--on-exit keep`.
-    #[arg(long)]
-    pub keep: bool,
 
     /// Create the worktree in detached HEAD, without making an `owt/<name>`
     /// branch. Keeps the branch namespace clean; conflicts with --keep.
     #[arg(long)]
     pub detach: bool,
-
-    /// The command (and its arguments) to run inside the worktree. Put it after
-    /// `--` so its own flags aren't parsed as owt flags, e.g. `owt -- eslint --fix`.
-    ///
-    /// We deliberately do NOT set `allow_hyphen_values`: with it, an unknown or
-    /// mistyped owt flag (e.g. `--parnet-dir`) would be silently swallowed into
-    /// the command instead of reported. Without it, the command's own hyphenated
-    /// args still work because they follow the `--` separator.
-    #[arg(trailing_var_arg = true)]
-    pub command: Vec<String>,
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, ValueEnum)]
@@ -100,6 +109,13 @@ pub enum OnExit {
 
 #[derive(Subcommand, Debug)]
 pub enum Sub {
+    /// Create a worktree and exit, leaving it for you to use (no command, no
+    /// shell, not auto-cleaned). Prints the worktree path to stdout, so
+    /// `cd "$(owt new)"` works. Remove it later with `owt clean`.
+    New {
+        #[command(flatten)]
+        create: CreateArgs,
+    },
     /// List worktrees created by owt (use --all to include external ones).
     List {
         /// Include worktrees not created by owt (read-only).

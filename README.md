@@ -282,6 +282,13 @@ confirmation prompt), `--dry-run` (show what would happen).
 External worktrees keep their branches; only owt-owned worktrees have their
 `owt/<name>` branch deleted on removal.
 
+**Broken worktrees.** If an owt worktree's `.git` gitlink goes missing (e.g. a
+prior removal deleted its contents but couldn't delete a locked directory),
+`git worktree remove` refuses it with a validation error. `owt clean` recovers
+such a worktree automatically — it prunes the stale registration and deletes the
+leftover directory — and **keeps the branch** (it may hold the only surviving
+copy of any commits made there), printing a note on how to delete it manually.
+
 ## Configuration
 
 | Env var | Effect |

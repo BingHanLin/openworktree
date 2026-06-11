@@ -192,15 +192,53 @@ pub fn plan_clean(name: Option<&str>, running: bool, all: bool, force: bool) -> 
 /// branch and index entry removed; external ones keep their branch.
 pub fn remove(plan: &Plan, force: bool) -> Result<()> {
     let path = Path::new(&plan.view.path);
+
+    // Did we have to recover a broken worktree (gitlink gone) instead of a clean
+    // `git worktree remove`? If so we keep its branch — that branch may hold the
+    // only surviving copy of any commits made in it.
+    let mut recovered_broken = false;
+
     if path.exists() {
-        git::worktree_remove(path, force)?;
+        if let Err(e) = git::worktree_remove(path, force) {
+            // `git worktree remove` refuses a worktree whose `.git` gitlink is
+            // missing ("validation failed ... '.git' does not exist") — a state
+            // left behind by, e.g., an earlier removal that deleted the contents
+            // but couldn't delete a locked directory. For our own worktrees,
+            // recover instead of erroring: prune the stale registration and
+            // delete the leftover directory ourselves.
+            let broken = !path.join(".git").exists();
+            if broken && plan.view.source == Source::Owt {
+                git::prune()?;
+                recovered_broken = true;
+                if let Err(re) = std::fs::remove_dir_all(path) {
+                    if path.exists() {
+                        eprintln!(
+                            "owt: warning: pruned stale registration for '{}' but could not \
+                             delete the leftover directory ({re}); it may be open in another process",
+                            path.display()
+                        );
+                    }
+                }
+            } else {
+                return Err(e);
+            }
+        }
     } else {
         // Directory already gone; clear the dangling registration.
         git::prune()?;
     }
+
     if plan.view.source == Source::Owt {
-        if let Some(branch) = &plan.view.branch {
-            let _ = git::branch_delete(branch);
+        match &plan.view.branch {
+            // A recovered broken worktree keeps its branch (possible unmerged work).
+            Some(branch) if recovered_broken => eprintln!(
+                "owt: kept branch '{branch}' (recovered from a broken worktree; \
+                 delete with `git branch -D {branch}` if you don't need it)"
+            ),
+            Some(branch) => {
+                let _ = git::branch_delete(branch);
+            }
+            None => {}
         }
         if let Some(name) = &plan.view.name {
             let _ = Metadata::remove_index(name);

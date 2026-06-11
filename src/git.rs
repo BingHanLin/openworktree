@@ -62,10 +62,18 @@ pub fn branch_exists(branch: &str) -> bool {
     .is_ok()
 }
 
-/// Create a worktree at `path` on a new `branch` based on `from_ref`.
-pub fn worktree_add(path: &Path, branch: &str, from_ref: &str) -> Result<()> {
+/// Create a worktree at `path` based on `from_ref`. With `Some(branch)` a new
+/// branch is created and checked out; with `None` the worktree is left in
+/// detached HEAD (no branch is created or occupied).
+pub fn worktree_add(path: &Path, branch: Option<&str>, from_ref: &str) -> Result<()> {
     let path = path.to_string_lossy();
-    git(&["worktree", "add", "-b", branch, &path, from_ref]).map(|_| ())
+    let mut args = vec!["worktree", "add"];
+    match branch {
+        Some(b) => args.extend(["-b", b]),
+        None => args.push("--detach"),
+    }
+    args.extend([path.as_ref(), from_ref]);
+    git(&args).map(|_| ())
 }
 
 /// Stage everything and commit inside the worktree. Returns whether a commit

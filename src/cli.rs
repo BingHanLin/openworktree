@@ -68,6 +68,11 @@ pub struct RunArgs {
     #[arg(long)]
     pub keep: bool,
 
+    /// Create the worktree in detached HEAD, without making an `owt/<name>`
+    /// branch. Keeps the branch namespace clean; conflicts with --keep.
+    #[arg(long)]
+    pub detach: bool,
+
     /// The command (and its arguments) to run inside the worktree.
     #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
     pub command: Vec<String>,

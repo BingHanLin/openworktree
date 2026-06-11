@@ -162,6 +162,51 @@ fn keep_retains_branch_without_leaking_metadata() {
 }
 
 #[test]
+fn detach_creates_no_branch_but_stays_tracked() {
+    let env = setup();
+    // Interactive keeps the worktree (never auto-cleaned); --detach must build it
+    // in detached HEAD without creating an owt/* branch. `git` is a stand-in
+    // shell that exits immediately.
+    let out = owt(&env, &["-i", "--detach", "--name", "dx", "--shell", "git"]);
+    let _ = out.status;
+
+    // The worktree exists but no branch was created.
+    assert_eq!(linked_worktree_count(env.repo.path()), 1);
+    assert!(
+        git_out(env.repo.path(), &["branch", "--list", "owt/*"])
+            .trim()
+            .is_empty(),
+        "detached worktree must not create an owt/* branch"
+    );
+
+    // It is still recognized as owt-owned via the central index (by path),
+    // not via a branch prefix.
+    let s = stdout(&owt(&env, &["list"]));
+    assert!(
+        s.contains("dx"),
+        "detached worktree should be listed as owt: {s}"
+    );
+
+    // And clean can target it by name.
+    let out = owt(&env, &["clean", "dx", "--yes"]);
+    assert!(out.status.success());
+    assert_eq!(linked_worktree_count(env.repo.path()), 0);
+}
+
+#[test]
+fn detach_conflicts_with_keep() {
+    let env = setup();
+    // keep needs a branch to retain its commit; detach has none.
+    let out = owt(&env, &["--detach", "--keep", "--", SH[0], SH[1], "echo hi"]);
+    assert!(!out.status.success());
+    assert_eq!(
+        linked_worktree_count(env.repo.path()),
+        0,
+        "must not create a worktree on a rejected combo"
+    );
+}
+
+#[test]
 fn worktreeinclude_copies_and_negates_and_extra_include() {
     let env = setup();
     let repo = env.repo.path();

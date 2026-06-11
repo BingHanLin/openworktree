@@ -88,6 +88,13 @@ fn run(args: RunArgs) -> Result<i32> {
     } else {
         args.on_exit
     };
+
+    // A kept worktree commits onto its branch; a detached one has none, so the
+    // commit would be unreachable. Reject the combination up front.
+    if args.detach && on_exit == OnExit::Keep {
+        bail!("--detach cannot be combined with --keep / --on-exit keep (keep needs a branch to retain the commit)");
+    }
+
     let fan_out = !args.each.is_empty() || args.shard.is_some();
 
     // Source ref: --from flag > config `from` > HEAD.
@@ -148,6 +155,7 @@ fn run_oneshot(args: &RunArgs, on_exit: OnExit, from: &str) -> Result<i32> {
         include: &args.include,
         setup: args.setup.as_deref(),
         on_exit,
+        detach: args.detach,
         interactive: false,
         command: args.command.clone(),
         progress: true,
@@ -169,15 +177,19 @@ fn run_interactive(args: &RunArgs, from: &str, config: &Config) -> Result<i32> {
         include: &args.include,
         setup: args.setup.as_deref(),
         on_exit: OnExit::Discard,
+        detach: args.detach,
         interactive: true,
         command: Vec::new(),
         progress: true,
     })?;
 
+    let branch_note = match &session.branch {
+        Some(b) => format!("branch {b}"),
+        None => "detached HEAD".to_string(),
+    };
     eprintln!(
-        "owt: entered worktree '{}' (branch {})\n     exit the shell to return; this worktree is NOT auto-cleaned.",
+        "owt: entered worktree '{}' ({branch_note})\n     exit the shell to return; this worktree is NOT auto-cleaned.",
         session.worktree_path.display(),
-        session.branch
     );
 
     let shell = config.resolve_shell(args.shell.as_deref());
@@ -241,6 +253,7 @@ fn run_fanout(args: &RunArgs, on_exit: OnExit, from: &str) -> Result<i32> {
         let command = args.command.clone();
         let include = args.include.clone();
         let setup = args.setup.clone();
+        let detach = args.detach;
         handles.push(std::thread::spawn(move || {
             run_job(
                 &repo_lock,
@@ -250,6 +263,7 @@ fn run_fanout(args: &RunArgs, on_exit: OnExit, from: &str) -> Result<i32> {
                 &include,
                 setup.as_deref(),
                 on_exit,
+                detach,
                 &command,
                 &env,
             )
@@ -285,6 +299,7 @@ fn run_job(
     include: &[String],
     setup: Option<&str>,
     on_exit: OnExit,
+    detach: bool,
     command: &[String],
     env: &[(String, String)],
 ) -> (String, i32) {
@@ -297,6 +312,7 @@ fn run_job(
             include,
             setup,
             on_exit,
+            detach,
             interactive: false,
             command: command.to_vec(),
             progress: false,

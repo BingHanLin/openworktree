@@ -129,6 +129,7 @@ exit-code summary.
 | `--setup <cmd>` | — | Command to run before the main command (e.g. `npm ci`) |
 | `--on-exit <discard\|keep>` | `discard` | What to do with the worktree at the end (one-shot) |
 | `--keep` | — | Shorthand for `--on-exit keep` |
+| `--detach` | — | Build the worktree in detached HEAD, with no `owt/<name>` branch (conflicts with `--keep`) |
 | `--shell <shell>` | config / `$SHELL` | Shell for interactive mode (`-i`) |
 | `--each <refs>` | — | Run once per comma-separated ref, in parallel |
 | `--shard <N>` | — | Run in N parallel worktrees from one ref |
@@ -141,6 +142,13 @@ exit-code summary.
 | `keep` | removed | **auto-committed** | kept | **kept** (empty branch kept too) |
 
 The `keep` auto-commit message is `owt: <command> @ <timestamp>`.
+
+By default `owt` creates an `owt/<name>` branch for each worktree. Pass
+`--detach` to skip that and build the worktree in **detached HEAD** instead — no
+branch is created or occupied, keeping your branch namespace clean. `owt` still
+tracks the worktree (via its central index), so `list` and `clean` work the same.
+`--detach` is incompatible with `--keep`: `keep` persists its commit on the
+branch, which a detached worktree has none of.
 
 ## `.worktreeinclude`
 

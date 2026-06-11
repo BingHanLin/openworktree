@@ -10,7 +10,8 @@ use crate::naming;
 
 pub struct Session {
     pub name: String,
-    pub branch: String,
+    /// The `owt/<name>` branch, or `None` for a detached worktree.
+    pub branch: Option<String>,
     pub worktree_path: PathBuf,
     pub on_exit: OnExit,
     /// Original command, used for the keep-mode auto-commit message.
@@ -29,6 +30,8 @@ pub struct CreateOpts<'a> {
     pub include: &'a [String],
     pub setup: Option<&'a str>,
     pub on_exit: OnExit,
+    /// Create the worktree detached (no `owt/<name>` branch).
+    pub detach: bool,
     pub interactive: bool,
     pub command: Vec<String>,
     /// Print step-by-step progress to stderr (off for fan-out to avoid interleaving).
@@ -43,9 +46,13 @@ impl Session {
         // Source tree to copy includes from (captured before creating the worktree).
         let toplevel = git::toplevel()?;
 
-        // Resolve a unique name and matching branch.
-        let name = resolve_name(opts.name)?;
-        let branch = format!("owt/{name}");
+        // Resolve a unique name; detached worktrees have no branch.
+        let name = resolve_name(opts.name, opts.detach)?;
+        let branch = if opts.detach {
+            None
+        } else {
+            Some(format!("owt/{name}"))
+        };
 
         // Resolve the worktree path.
         let worktree_path = match opts.dir {
@@ -67,7 +74,7 @@ impl Session {
                 opts.from
             );
         }
-        git::worktree_add(&worktree_path, &branch, opts.from)?;
+        git::worktree_add(&worktree_path, branch.as_deref(), opts.from)?;
 
         let mut session = Session {
             name: name.clone(),
@@ -162,13 +169,22 @@ impl Session {
 
     fn discard(&self) -> Result<()> {
         git::worktree_remove(&self.worktree_path, true)?;
-        // Best-effort: branch deletion can fail if already gone.
-        let _ = git::branch_delete(&self.branch);
+        // Best-effort: branch deletion can fail if already gone. Detached
+        // worktrees have no branch to delete.
+        if let Some(branch) = &self.branch {
+            let _ = git::branch_delete(branch);
+        }
         Metadata::remove_index(&self.name)?;
         Ok(())
     }
 
     fn keep(&self) -> Result<()> {
+        // Keep relies on a branch to retain the auto-commit; a detached commit
+        // would become unreachable once the worktree is removed. The CLI rejects
+        // --detach + keep, so this is just a safety net.
+        if self.branch.is_none() {
+            bail!("internal error: keep policy requires a branch (detached session)");
+        }
         let message = format!(
             "owt: {} @ {}",
             self.command.join(" "),
@@ -186,7 +202,9 @@ impl Session {
     /// Best-effort teardown used when creation fails partway through.
     fn cleanup_on_error(&mut self) {
         let _ = git::worktree_remove(&self.worktree_path, true);
-        let _ = git::branch_delete(&self.branch);
+        if let Some(branch) = &self.branch {
+            let _ = git::branch_delete(branch);
+        }
         let _ = Metadata::remove_index(&self.name);
         self.cleaned = true;
     }
@@ -203,25 +221,41 @@ impl Drop for Session {
 }
 
 /// Generate or validate the worktree name.
-fn resolve_name(requested: Option<&str>) -> Result<String> {
+///
+/// A name is taken if its `owt/<name>` branch exists or (for detached
+/// worktrees, which have no branch) a central index entry already owns it.
+fn resolve_name(requested: Option<&str>, detach: bool) -> Result<String> {
     match requested {
         Some(n) => {
-            let branch = format!("owt/{n}");
-            if git::branch_exists(&branch) {
-                bail!("name '{}' already in use (branch {} exists)", n, branch);
+            if let Some(reason) = name_conflict(n, detach) {
+                bail!("name '{}' already in use ({})", n, reason);
             }
             Ok(n.to_string())
         }
         None => {
             for _ in 0..50 {
                 let candidate = naming::random_name();
-                if !git::branch_exists(&format!("owt/{candidate}")) {
+                if name_conflict(&candidate, detach).is_none() {
                     return Ok(candidate);
                 }
             }
             bail!("could not generate a unique worktree name");
         }
     }
+}
+
+/// Describe why `name` is unavailable, or `None` if it is free. For branch-based
+/// sessions a matching `owt/<name>` branch is the conflict; for detached ones
+/// only the index can reveal a collision.
+fn name_conflict(name: &str, detach: bool) -> Option<String> {
+    let branch = format!("owt/{name}");
+    if !detach && git::branch_exists(&branch) {
+        return Some(format!("branch {branch} exists"));
+    }
+    if Metadata::index_exists(name) {
+        return Some("an owt worktree with this name already exists".to_string());
+    }
+    None
 }
 
 /// Run a shell command string inside a directory, inheriting stdio.

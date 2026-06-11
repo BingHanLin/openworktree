@@ -507,6 +507,38 @@ fn clean_all_skips_dirty_without_force_then_removes_with_force() {
 }
 
 #[test]
+fn clean_recovers_worktree_with_missing_gitlink() {
+    let env = setup();
+    let repo = env.repo.path();
+
+    // Create an owt worktree (tracked in the index), then simulate the breakage:
+    // delete its `.git` gitlink so `git worktree remove` would fail validation.
+    let out = owt(&env, &["new", "--name", "broke"]);
+    assert!(out.status.success());
+    let path = stdout(&out).trim().to_string();
+    std::fs::remove_file(Path::new(&path).join(".git")).unwrap();
+
+    // A plain `clean` must now recover it (prune + delete dir), not error out.
+    let out = owt(&env, &["clean", "broke", "--yes"]);
+    assert!(
+        out.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(
+        !Path::new(&path).exists(),
+        "leftover directory should be removed"
+    );
+    assert_eq!(linked_worktree_count(repo), 0);
+    // Index entry cleared...
+    assert!(!stdout(&owt(&env, &["list"])).contains("broke"));
+    // ...but the branch is kept (it may hold the only copy of any commits).
+    assert!(git_out(repo, &["branch", "--list", "owt/broke"]).contains("owt/broke"));
+
+    git(repo, &["branch", "-D", "owt/broke"]);
+}
+
+#[test]
 fn clean_never_removes_main_worktree() {
     let env = setup();
     let repo = env.repo.path();
